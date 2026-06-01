@@ -303,6 +303,8 @@ class MeetingExtractionMixin:
             log(f"Memory indexing failed for Meet {state.meeting_code}: {error}", state.session_id, level="error")
 
         if state.joined_at:
+            if state.stop_requested:
+                return
             live_stt_summary = ""
             if state.live_stt_requested and not state.live_stt_started:
                 live_stt_summary = " Live audio transcription did not start because no audio chunk was received."
@@ -509,4 +511,3 @@ class MeetingExtractionMixin:
             if summary_long and len(summary_long) > 4000:
                 summary_long = summary_long[:4000]
         return summary_short, summary_long
-
