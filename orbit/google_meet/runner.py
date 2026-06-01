@@ -40,10 +40,8 @@ async def run_meeting_session(config, callbacks=None, state=None):
 
     try:
         browser = build_browser(Browser, state=state, session_config=config)
-        agent_model = os.environ.get("ORBIT_BROWSER_AGENT_MODEL", config.model_name)
-        fallback_agent_model = os.environ.get(
-            "ORBIT_BROWSER_AGENT_FALLBACK_MODEL", "gpt-4o-mini"
-        )
+        agent_model = config.model_name
+        fallback_agent_model = "gpt-4o-mini"
         log(f"Agent model: {agent_model}", state.session_id, level="debug")
         if fallback_agent_model:
             log(f"Fallback agent model: {fallback_agent_model}", state.session_id, level="debug")
