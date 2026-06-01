@@ -398,6 +398,12 @@ Fallback/debug live audio stream from a PulseAudio/PipeWire monitor source:
 | `ORBIT_MEMORY_SIMILARITY_THRESHOLD` | Minimum cosine-similarity score for memory retrieval, default `0.35` |
 | `ORBIT_LOG_LEVEL` | Log verbosity. One of `important` (default), `info`, `debug`, `error`, `quiet`. |
 | `GMEET_DISPLAY_NAME` | Name Orbit uses in Google Meet |
+| `GMEET_CHROME_PROFILE_DIRECTORY` | Optional Chrome profile directory to reuse with `GMEET_USE_SYSTEM_CHROME=true` |
+| `GMEET_CHROME_NEW_PROFILE` | When true (default), create a fresh Chrome user profile per system-Chrome run |
+| `GMEET_CHROME_EXECUTABLE_PATH` | Optional explicit Chrome executable path |
+| `GMEET_PREFER_CHROME_FOR_TESTING` | Prefer local Playwright Chrome for Testing for isolated Chrome sessions, default `true` |
+| `GMEET_FAST_JOIN_ENABLED` | Use deterministic DOM-based Meet join before falling back to the LLM browser agent |
+| `GMEET_FAST_JOIN_TIMEOUT_MS` | Maximum time spent on deterministic join before fallback, default `12000` |
 | `GMEET_ADMISSION_WAIT_MS` | Maximum deterministic wait for host admission after Orbit submits a join request, default `120000` (2 minutes). |
 | `GMEET_WAIT_AFTER_JOIN_MS` | Maximum monitoring duration after joining, default `300000` (5 minutes). Orbit checks participants every 30 seconds and leaves earlier after other participants depart and it is the only participant left. |
 | `GMEET_USE_SYSTEM_CHROME` | Use installed Chrome profile instead of managed browser |

@@ -71,7 +71,7 @@ class MeetingSessionMixin:
             self.pending_meeting_starts.add(normalized_meeting_code)
             session_id = self.build_session_id(meeting_code)
         try:
-            meeting_id, source_id = await self._create_meeting_record(meet_url, from_number, profile_name)
+            meeting_id, source_id = await self._create_meeting_record(meet_url, from_number, profile_name, session_id=session_id)
             from orbit import whatsapp_service as whatsapp_service_facade
             try:
                 capture_session = await self.meeting_store.create_capture_session(
@@ -83,6 +83,12 @@ class MeetingSessionMixin:
                 capture_session_id = capture_session.get("id") if isinstance(capture_session, dict) else None
                 if not capture_session_id:
                     raise RuntimeError("Capture session create returned no id.")
+                log(
+                    f"evt=db.insert table=capture_sessions session_id={session_id} capture_session_id={capture_session_id} "
+                    f"meeting_id={meeting_id} source_id={source_id}",
+                    session_id,
+                    level="important",
+                )
             except Exception as error:
                 log(f"Failed to create capture session for {meeting_id}: {error}", session_id, level="error")
                 return {
@@ -167,7 +173,7 @@ class MeetingSessionMixin:
 
             return {"status": "started", "meeting_code": meeting_code, "session_id": session_id}
 
-    async def _create_meeting_record(self, meet_url, from_number, profile_name=None):
+    async def _create_meeting_record(self, meet_url, from_number, profile_name=None, session_id=None):
         if not from_number:
             raise ValueError("from_number is required to create meeting records.")
 
@@ -194,6 +200,14 @@ class MeetingSessionMixin:
         )
         if not meeting_id:
             raise RuntimeError("Failed to create meeting row.")
+
+        if session_id:
+            log(
+                f"evt=db.insert table=persons,sources,meetings source=whatsapp session_id={session_id} "
+                f"person_id={person_id} source_id={source_id} meeting_id={meeting_id}",
+                session_id,
+                level="important",
+            )
         return meeting_id, source_id
 
     async def _run_session(self, active, config):

@@ -80,7 +80,11 @@ class LiveSTTSession:
             raise
         await self._emit_health_event("connected")
         self.receive_task = asyncio.create_task(self._receive_loop())
-        log("Live STT Deepgram stream started.", self.state.session_id, level="important")
+        log(
+            f"evt=stt.stream_started model={self.model}",
+            self.state.session_id,
+            level="important",
+        )
 
     async def send_audio(self, chunk: bytes) -> None:
         if self.closed:
@@ -126,6 +130,15 @@ class LiveSTTSession:
         if not raw_segments:
             return
 
+        raw_transcript = _deepgram_message_text(raw_segments)
+        if raw_transcript and transcript_result is not None:
+            log(
+                f"evt=stt.deepgram_result final={transcript_result['is_final']} "
+                f"text={raw_transcript[:300]!r}",
+                self.state.session_id,
+                level="important",
+            )
+
         log(
             f"Deepgram final transcript received: {_format_segments_for_log(raw_segments, 'raw_text')}",
             self.state.session_id,
@@ -145,9 +158,9 @@ class LiveSTTSession:
             return
 
         log(
-            f"Normalized transcript segment(s): {_format_segments_for_log(normalized_segments, 'clean_text')}",
+            f"evt=stt.transcript_stored count={len(normalized_segments)}",
             self.state.session_id,
-            level="debug",
+            level="important",
         )
         self.state.live_transcript_segments.extend(normalized_segments)
         self._trim_live_transcript_buffer()
@@ -176,9 +189,10 @@ class LiveSTTSession:
             f"Stored {len(segments)} normalized transcript segment(s) through "
             f"{type(self.memory).__name__}.",
             self.state.session_id,
-            level="debug",
+            level="important",
         )
         self.final_segments_recorded += len(segments)
+
 
     def _trim_live_transcript_buffer(self) -> None:
         segments = self.state.live_transcript_segments[-MAX_LIVE_TRANSCRIPT_SEGMENTS:]
@@ -275,6 +289,14 @@ class LiveSTTSession:
                 channels=audio_format.channels,
             ),
         )
+
+
+def _deepgram_message_text(segments):
+    if not segments:
+        return ""
+    parts = [str(getattr(segment, "raw_text", "") or "") for segment in segments]
+    text = " ".join(part for part in parts if part).strip()
+    return text
 
 
 def _format_segments_for_log(segments, text_field: str) -> str:

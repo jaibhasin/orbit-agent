@@ -1,20 +1,52 @@
 # ruff: noqa: F401,F403,F405
 from __future__ import annotations
 
+import tempfile
+
 from .common import *
 from .common import _build_server_audio_env, _build_supported_kwargs
+
+
+def _find_chrome_for_testing_executable():
+    candidates = [
+        Path("/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
+        *Path.home().glob(
+            "Library/Caches/ms-playwright/chromium-*/chrome-*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+        ),
+        *Path.home().glob(
+            "Library/Caches/ms-playwright/chromium-*/chrome-*-*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+        ),
+    ]
+    existing = [candidate for candidate in candidates if candidate.exists()]
+    if not existing:
+        return None
+    return str(sorted(existing, key=lambda path: path.stat().st_mtime, reverse=True)[0])
+
+
+def _find_chrome_executable(prefer_chrome_for_testing=True):
+    if prefer_chrome_for_testing:
+        chrome_for_testing = _find_chrome_for_testing_executable()
+        if chrome_for_testing:
+            return chrome_for_testing
+
+    from browser_use.skill_cli.utils import find_chrome_executable
+
+    return find_chrome_executable()
 
 
 def build_browser(Browser, state=None, session_config=None):
     session_id = getattr(state, "session_id", None)
     headless = env_bool("HEADLESS", False)
-    use_system_chrome = env_bool("GMEET_USE_SYSTEM_CHROME", False)
+    use_system_chrome = env_bool("GMEET_USE_SYSTEM_CHROME", True)
     profile_directory = os.environ.get("GMEET_CHROME_PROFILE_DIRECTORY")
+    force_new_profile = env_bool("GMEET_CHROME_NEW_PROFILE", True)
+    chrome_executable_path = os.environ.get("GMEET_CHROME_EXECUTABLE_PATH")
+    prefer_chrome_for_testing = env_bool("GMEET_PREFER_CHROME_FOR_TESTING", True)
     cdp_url = os.environ.get("ORBIT_CHROME_CDP_URL")
     extension_path = os.environ.get("ORBIT_CHROME_EXTENSION_PATH", "extension/orbit-audio-capture")
     extension_path_obj = Path(extension_path).expanduser()
     if not extension_path_obj.is_absolute():
-        extension_path_obj = (Path(__file__).resolve().parents[1] / extension_path_obj).resolve()
+        extension_path_obj = (Path(__file__).resolve().parents[2] / extension_path_obj).resolve()
     audio_capture_strategy = (
         getattr(session_config, "audio_capture_strategy", None)
         or get_audio_capture_strategy()
@@ -24,10 +56,14 @@ def build_browser(Browser, state=None, session_config=None):
     route_audio_to_sink = audio_capture_strategy == "server_audio_sink" and bool(sink_name)
 
     if cdp_url:
-        log(f"Connecting Browser Use to existing Chrome over CDP: {cdp_url}", session_id, level="debug")
+        log(
+            f"stage=browser.use_browser mode=cdp cdp_url={cdp_url}",
+            session_id,
+            level="important",
+        )
         if route_audio_to_sink and state is not None:
             log(
-                "Cannot apply per-session audio routing with ORBIT_CHROME_CDP_URL; CDP path is shared.",
+                "stage=browser.audio_routing unavailable reason=cdp_shared",
                 session_id,
                 level="important",
             )
@@ -40,52 +76,47 @@ def build_browser(Browser, state=None, session_config=None):
             keep_alive=True,
         )
 
-    browser_args = []
+    browser_args = [
+        "--password-store=basic",
+        "--use-mock-keychain",
+    ]
     if extension_path_obj.exists():
         resolved_extension_path = str(extension_path_obj)
-        log(f"Orbit extension path resolved to: {resolved_extension_path}", session_id, level="debug")
+        log(f"stage=browser.extension_path resolved={resolved_extension_path}", session_id, level="important")
         browser_args.extend(
             [
+                "--enable-extensions",
+                "--disable-extensions-file-access-check",
                 f"--disable-extensions-except={resolved_extension_path}",
                 f"--load-extension={resolved_extension_path}",
             ]
         )
     else:
         log(
-            f"Orbit extension path not found; live tab audio capture via extension will be disabled: {extension_path_obj}",
+            f"stage=browser.extension_path_missing path={extension_path_obj}",
             session_id,
             level="important",
         )
 
-    if use_system_chrome:
-        if route_audio_to_sink:
-            log(
-                f"server_audio_sink requested for session {session_id} capture_session_id={capture_session_id}; "
-                "using managed browser for per-session isolation.",
-                session_id,
-                level="debug",
-            )
-            use_system_chrome = False
-        elif extension_path_obj.exists():
-            log(
-                "GMEET_USE_SYSTEM_CHROME is enabled while extension-based STT is configured. "
-                "Switching to managed browser so --load-extension can be applied.",
-                session_id,
-                level="important",
-            )
-            use_system_chrome = False
-
+    if use_system_chrome and route_audio_to_sink:
         log(
-            "Using Browser Use with your installed Chrome profile."
-            if use_system_chrome
-            else "Using managed Browser Use session.",
+            f"stage=browser.audio_route request=server_audio_sink session={session_id} "
+            f"capture_session={capture_session_id}; using managed browser",
             session_id,
             level="debug",
         )
+        use_system_chrome = False
+
+    if use_system_chrome:
+        log(
+            f"stage=browser.launch mode={'system_chrome_profile' if profile_directory else 'system_chrome_isolated' if force_new_profile else 'system_chrome'}"
+            f"{' profile_dir_set=1' if profile_directory else ''}",
+            session_id,
+            level="important",
+        )
         if browser_args:
             log(
-                "Official Chrome 137+ ignores command-line unpacked-extension loading. "
-                "Load the Orbit extension manually from chrome://extensions before joining.",
+                f"stage=browser.extension_args loaded={bool(browser_args)}",
                 session_id,
                 level="important",
             )
@@ -96,6 +127,29 @@ def build_browser(Browser, state=None, session_config=None):
                 keep_alive=True,
                 args=browser_args or None,
             )
+        if force_new_profile:
+            if not chrome_executable_path:
+                chrome_executable_path = _find_chrome_executable(
+                    prefer_chrome_for_testing=prefer_chrome_for_testing,
+                )
+            if not chrome_executable_path:
+                raise RuntimeError("System Chrome executable was not found.")
+            temporary_profile_dir = tempfile.mkdtemp(prefix=f"browser-use-user-data-dir-orbit-{session_id or 'session'}-")
+            log(
+                f"stage=browser.launch mode=system_chrome_isolated executable={chrome_executable_path} fresh_profile_dir={temporary_profile_dir}",
+                session_id,
+                level="important",
+            )
+            return Browser(
+                executable_path=chrome_executable_path,
+                user_data_dir=temporary_profile_dir,
+                profile_directory="Default",
+                headless=headless,
+                keep_alive=True,
+                window_size={"width": 1440, "height": 960},
+                enable_default_extensions=False,
+                args=browser_args or None,
+            )
         return Browser.from_system_chrome(keep_alive=True, args=browser_args or None)
 
     if route_audio_to_sink and state is not None:
@@ -103,6 +157,11 @@ def build_browser(Browser, state=None, session_config=None):
         state.browser_audio_routed = False
         state.browser_process_isolated = True
         state.audio_sink_name = sink_name
+        log(
+            f"stage=browser.launch mode=managed route=server_audio_sink session={session_id}",
+            session_id,
+            level="important",
+        )
 
     browser_kwargs = {
         "headless": headless,
@@ -147,17 +206,17 @@ def build_browser(Browser, state=None, session_config=None):
         else:
             browser = Browser(**browser_kwargs)
     else:
-        log("Using Browser Use managed browser session for guest join flow.", session_id, level="debug")
+        log("stage=browser.launch mode=managed", session_id, level="important")
         browser = Browser(
             **browser_kwargs,
         )
     if not route_audio_to_sink and browser_args:
-        log(f"Loading Orbit audio capture extension: {resolved_extension_path}", session_id, level="debug")
+        log(f"stage=browser.extension_enabled path={resolved_extension_path}", session_id, level="important")
     if route_audio_to_sink and browser_args:
         log(
             f"Managed browser launched for server_audio_sink with target sink: {sink_name}",
             session_id,
-            level="debug",
+            level="important",
         )
 
     return browser

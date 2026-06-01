@@ -64,10 +64,32 @@ class MeetingExtractionMixin:
             )
 
         try:
+            log(
+                f"evt=extraction.start meeting_id={meeting_id} source_id={source_id} "
+                f"run_type={run_type} model={model}",
+                meeting_id,
+                level="important",
+            )
             chunks = await store.get_source_chunks_by_source_id(source_id) or []
+            log(
+                f"evt=extraction.source_chunks_loaded source_id={source_id} count={len(chunks)}",
+                meeting_id,
+                level="important",
+            )
+
             transcript = self._build_transcript_text(chunks)
             if not transcript:
                 output_json = self._empty_extraction_output()
+                decisions = output_json.get("decisions")
+                action_items = output_json.get("action_items")
+                memories = output_json.get("durable_memories") or output_json.get("durableMemories")
+                self._log_extraction_payload(
+                    meeting_id,
+                    source_id,
+                    decisions=decisions,
+                    action_items=action_items,
+                    memories=memories,
+                )
                 extraction_run_id = await store.create_extraction_run(
                     source_id=source_id,
                     meeting_id=meeting_id,
@@ -81,17 +103,24 @@ class MeetingExtractionMixin:
                 decisions_inserted = await store.createDecisionsFromExtraction(
                     meeting_id=meeting_id,
                     source_id=source_id,
-                    decisions=output_json.get("decisions"),
+                    decisions=decisions,
                 )
                 action_items_inserted = await store.createActionItemsFromExtraction(
                     meeting_id=meeting_id,
                     source_id=source_id,
-                    action_items=output_json.get("action_items"),
+                    action_items=action_items,
                 )
                 memories_inserted = await store.createMemoriesFromExtraction(
                     meeting_id=meeting_id,
                     source_id=source_id,
-                    memories=output_json.get("durable_memories") or output_json.get("durableMemories"),
+                    memories=memories,
+                )
+                log(
+                    f"evt=extraction.stored run_id={extraction_run_id} "
+                    f"decisions={decisions_inserted} action_items={action_items_inserted} "
+                    f"memories={memories_inserted}",
+                    meeting_id,
+                    level="important",
                 )
                 if not skip_status_updates:
                     await store.update_meeting_status(
@@ -102,6 +131,11 @@ class MeetingExtractionMixin:
                         summary_short=summary_short,
                         summary_long=summary_long,
                     )
+                log(
+                    f"evt=extraction.finished meeting_id={meeting_id} source_id={source_id} status=success",
+                    meeting_id,
+                    level="important",
+                )
                 return {
                     "extraction_run_id": extraction_run_id,
                     "status": "success",
@@ -112,6 +146,11 @@ class MeetingExtractionMixin:
                 }
 
             extraction_prompt = MEETING_EXTRACT_PROMPT.format(transcript=transcript)
+            log(
+                f"evt=extraction.prompt_prepared meeting_id={meeting_id} source_id={source_id} prompt_length={len(extraction_prompt)}",
+                meeting_id,
+                level="important",
+            )
             response = await self.openai_client.chat.completions.create(
                 model=model or self.model_name,
                 messages=[
@@ -123,8 +162,23 @@ class MeetingExtractionMixin:
                 ],
             )
             raw_output = (response.choices[0].message.content or "").strip() if response.choices else ""
+            log(
+                f"evt=extraction.raw_llm_output meeting_id={meeting_id} source_id={source_id} chars={len(raw_output)}",
+                meeting_id,
+                level="important",
+            )
             output_json = self._parse_extraction_json(raw_output)
             output_json = self._normalize_extraction_output(output_json)
+            decisions = output_json.get("decisions") or []
+            action_items = output_json.get("action_items") or []
+            memories = output_json.get("durable_memories") or output_json.get("durableMemories") or []
+            self._log_extraction_payload(
+                meeting_id,
+                source_id,
+                decisions=decisions,
+                action_items=action_items,
+                memories=memories,
+            )
             extraction_run_id = await store.create_extraction_run(
                 source_id=source_id,
                 meeting_id=meeting_id,
@@ -138,17 +192,24 @@ class MeetingExtractionMixin:
             decisions_inserted = await store.createDecisionsFromExtraction(
                 meeting_id=meeting_id,
                 source_id=source_id,
-                decisions=output_json.get("decisions"),
+                decisions=decisions,
             )
             action_items_inserted = await store.createActionItemsFromExtraction(
                 meeting_id=meeting_id,
                 source_id=source_id,
-                action_items=output_json.get("action_items"),
+                action_items=action_items,
             )
             memories_inserted = await store.createMemoriesFromExtraction(
                 meeting_id=meeting_id,
                 source_id=source_id,
-                memories=output_json.get("durable_memories") or output_json.get("durableMemories"),
+                memories=memories,
+            )
+            log(
+                f"evt=extraction.stored run_id={extraction_run_id} "
+                f"decisions={decisions_inserted} action_items={action_items_inserted} "
+                f"memories={memories_inserted}",
+                meeting_id,
+                level="important",
             )
 
             if not skip_status_updates:
@@ -160,6 +221,11 @@ class MeetingExtractionMixin:
                     summary_short=summary_short,
                     summary_long=summary_long,
                 )
+            log(
+                f"evt=extraction.finished meeting_id={meeting_id} source_id={source_id} status=success",
+                meeting_id,
+                level="important",
+            )
             return {
                 "extraction_run_id": extraction_run_id,
                 "status": "success",
@@ -170,6 +236,11 @@ class MeetingExtractionMixin:
             }
         except Exception as error:
             error_message = str(error)
+            log(
+                f"evt=extraction.failed meeting_id={meeting_id} source_id={source_id} error={error_message[:180]}",
+                meeting_id,
+                level="error",
+            )
             try:
                 await store.create_extraction_run(
                     source_id=source_id,
@@ -240,6 +311,83 @@ class MeetingExtractionMixin:
 
         candidate = trimmed[brace_start : brace_end + 1]
         return json.loads(candidate)
+
+    @staticmethod
+    def _log_extraction_payload(
+        meeting_id,
+        source_id,
+        *,
+        decisions,
+        action_items,
+        memories,
+    ):
+        extracted_decisions = MeetingExtractionMixin._coerce_output_list(decisions)
+        extracted_action_items = MeetingExtractionMixin._coerce_output_list(action_items)
+        extracted_memories = MeetingExtractionMixin._coerce_output_list(memories)
+        log(
+            f"evt=extraction.payload meeting_id={meeting_id} source_id={source_id} "
+            f"decisions={len(extracted_decisions)} action_items={len(extracted_action_items)} "
+            f"memories={len(extracted_memories)}",
+            meeting_id,
+            level="important",
+        )
+        log(
+            f"evt=extraction.decisions sample={MeetingExtractionMixin._preview_list(extracted_decisions)}",
+            meeting_id,
+            level="important",
+        )
+        log(
+            f"evt=extraction.action_items sample={MeetingExtractionMixin._preview_list(extracted_action_items)}",
+            meeting_id,
+            level="important",
+        )
+        log(
+            f"evt=extraction.memories sample={MeetingExtractionMixin._preview_list(extracted_memories)}",
+            meeting_id,
+            level="important",
+        )
+
+    @staticmethod
+    def _preview_list(values, max_items=3, max_chars=140):
+        normalized = MeetingExtractionMixin._coerce_output_list(values)
+        if not normalized:
+            return "[]"
+
+        compact = []
+        for value in normalized[:max_items]:
+            compact.append(MeetingExtractionMixin._preview_value(value, max_chars=max_chars))
+
+        if len(normalized) > max_items:
+            compact.append("...")
+        return f"[{'; '.join(compact)}]"
+
+    @staticmethod
+    def _preview_value(value, max_chars=140):
+        if isinstance(value, str):
+            return MeetingExtractionMixin._truncate(value, max_chars=max_chars)
+
+        if isinstance(value, dict):
+            text = (
+                value.get("text")
+                or value.get("item")
+                or value.get("description")
+                or value.get("title")
+                or ""
+            )
+            if text:
+                return MeetingExtractionMixin._truncate(str(text), max_chars=max_chars)
+
+        rendered = str(value)
+        return MeetingExtractionMixin._truncate(rendered, max_chars=max_chars)
+
+    @staticmethod
+    def _truncate(text, max_chars=140):
+        if not text:
+            return ""
+        clean_text = str(text).replace("\n", " ").strip()
+        if len(clean_text) <= max_chars:
+            return clean_text
+        return f"{clean_text[: max_chars - 3]}..."
 
     @staticmethod
     def _coerce_output_list(value):
@@ -398,7 +546,7 @@ class MeetingExtractionMixin:
 
             if extraction.get("status") == "failed":
                 if track_capture_finalization:
-                await self._mark_capture_session_failed(
+                    await self._mark_capture_session_failed(
                     active,
                     "MEETING_EXTRACTION_FAILED",
                     "Meeting capture extraction failed.",
