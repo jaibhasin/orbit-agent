@@ -1,32 +1,84 @@
 # Orbit
 
-**Orbit is a source-backed recall layer for meetings and decisions.**
+**Orbit is building the system of context for AI-native companies.**
 
-It joins Google Meets, watches meeting chat, captures live meeting transcripts, stores organizational memory, and makes that memory queryable through AI agents. The current bootstrap control plane is a WhatsApp agent backed by FastAPI, browser automation, OpenAI, Deepgram live STT, and an optional Postgres-backed storage layer.
+AI-native companies will not run on static dashboards, scattered meeting notes, and a chat box bolted onto old workflows. They will run on continuously updated context: what changed, what was decided, who owns the next move, where the evidence came from, and what the company should look at now.
 
-The product thesis is narrower than "a WhatsApp bot": Orbit is trying to answer what was decided, why, and what source evidence backs that answer. WhatsApp is the fastest shell around that workflow today, not the moat.
+This repository implements Orbit's first wedge: source-backed meeting and decision memory. Orbit joins authorized Google Meets, captures chat and live transcript evidence, extracts structured company memory, stores provenance, and makes the result queryable through WhatsApp, API tools, and an early OpenUI command-center prototype.
 
-## Current Capabilities
+## AI-Native Companies Need Context
 
-- Joins Google Meet links through Browser Use + Chrome automation.
-- Uses the configured Orbit display name on guest join screens.
-- Prefers joining with microphone and camera disabled.
-- Sends a short intro message after joining a meeting.
-- Opens and monitors Google Meet chat.
-- Captures visible Meet chat messages during the session.
-- Captures Google Meet tab audio through a local Manifest V3 Chrome extension.
-- Streams live audio to the Orbit backend, then forwards it to Deepgram for STT.
-- Normalizes final transcript segments before writing them into persistent storage.
-- Uses Google Meet captions as a best-effort speaker attribution layer when available.
-- Detects `@orbit` mentions inside Meet chat.
-- Starts meetings from WhatsApp via deterministic commands over Twilio.
-- Schedules capture jobs through `request_meeting_capture` and backend session dispatch.
-- Supports deterministic WhatsApp commands: `join`, `status`, `summary`, `decisions`, `actions`, `recent`, and `open actions`.
-- Keeps the command handler deterministic and tool-based (no direct Chrome/Deepgram/LLM calls in command parsing).
-- Returns meeting intelligence summaries and counts from persisted meeting artifacts.
-- Stores meeting source/metadata/transcript chunks/extraction outputs through Postgres tables.
+The shift to AI-native work is bigger than adding an assistant to every product.
 
-## Architecture
+[Microsoft's 2025 Work Trend Index](https://www.microsoft.com/en-us/worklab/work-trend-index/2025-the-year-the-frontier-firm-is-born) describes the emergence of "Frontier Firms": organizations built around human-agent teams, with agents taking on more work across the business. [SAP's AI-Native North-Star Architecture](https://architecture.learning.sap.com/docs/ai-native-north-star-architecture/vision) makes the enterprise implication explicit: systems of record are not enough on their own. AI-native systems need a **system of context** that can assemble relevant business state at decision time.
+
+The model is only one part of the system. [Anthropic's context-engineering guidance](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) argues that agent quality depends on curating the right context state: instructions, tools, retrieved evidence, history, and runtime signals. More context is not automatically better. The useful context must be authorized, current, source-backed, and relevant to the task.
+
+That is the bet behind Orbit:
+
+```text
+company activity
+      |
+      v
+captured evidence
+      |
+      v
+structured, source-backed memory
+      |
+      v
+AI-generated answers, tools, and operating views
+```
+
+Meetings are the starting point because they contain high-value context that often disappears immediately after the call: decisions, rationale, unresolved questions, commitments, risks, and changing priorities.
+
+## From Prompt To Dashboard
+
+Static dashboards force a company to predict every future question in advance. An AI-native dashboard should assemble the right interface when the question arrives.
+
+Ask Orbit:
+
+```text
+What changed this week?
+Which projects are blocked, and which meeting introduced each blocker?
+Show decisions waiting for an owner.
+Build a founder view of product momentum, open loops, and AI spend.
+What should the team look at before the next launch review?
+```
+
+The target experience is a dynamic command center generated from prompts and grounded in company context:
+
+```text
+prompt
+  -> retrieve authorized evidence
+  -> call typed company tools
+  -> select the right UI components
+  -> render a purpose-built dashboard
+  -> keep every claim linked to source context
+```
+
+Instead of one fixed BI screen, Orbit can generate the operating view needed for the moment: a project radar, a decision timeline, an action queue, a weekly executive pulse, a cost breakdown, or a focused investigation into one risk.
+
+The frontend in [`frontend/openui-orbit-demo`](frontend/openui-orbit-demo) is the first design probe for that direction. It uses [`@openuidev/react-lang`](https://www.openui.com/docs/openui-lang) and the [OpenUI architecture](https://www.openui.com/docs/architecture) to render a constrained React component library from an OpenUI response.
+
+**Current state:** the command-center frontend is a static synthetic demo. It proves the visual language and rendering boundary, but it is not yet connected to Orbit's backend data or an LLM prompt-to-dashboard pipeline.
+
+## What Exists Today
+
+| Layer | Status | What it does |
+| --- | --- | --- |
+| Google Meet agent | Implemented | Joins authorized Meets with mic and camera disabled, opens chat, posts an intro, and monitors the session |
+| Meet chat capture | Implemented | Captures visible chat messages and detects `@orbit` mentions |
+| Live transcript capture | Implemented | Captures Meet tab audio through a local Manifest V3 Chrome extension and streams PCM16 audio to Deepgram |
+| Speaker enrichment | Best effort | Uses visible Google Meet captions as an optional speaker-attribution layer |
+| Structured meeting memory | Implemented | Persists sources, meetings, capture sessions, transcript chunks, extraction runs, decisions, action items, and durable memories |
+| Searchable memory | Implemented | Stores chat and transcript memory chunks with OpenAI embeddings for source-backed recall |
+| WhatsApp control plane | Implemented | Accepts deterministic Twilio WhatsApp commands for capture, status, summaries, decisions, and actions |
+| Meeting intelligence API | Implemented | Returns processed meeting summaries and structured artifacts over HTTP |
+| Dynamic AI dashboard | Prototype | Ships a static OpenUI command-center demo with synthetic telemetry |
+
+WhatsApp is the bootstrap shell, not the product boundary. Google Meet is the first context source, not the final surface area. The long-term product is a trusted operating layer for company context.
+
+## System Flow
 
 ```text
 WhatsApp / Twilio
@@ -35,123 +87,84 @@ WhatsApp / Twilio
 FastAPI webhook
       |
       v
-Deterministic command handler
+deterministic command handler
       |
       v
-Agent tool wrappers
+agent tool wrappers
       |
-      +--> request_meeting_capture -> capture dispatcher
-      |
-      +--> Meeting intelligence reads
-      |
-      +--> Google Meet session worker
+      +--> request_meeting_capture
       |       |
       |       v
-      |   Browser Use + Chrome
+      |   in-process capture dispatcher
       |       |
+      |       v
+      |   Google Meet session worker
+      |       |
+      |       +--> deterministic DOM join
+      |       +--> Browser Use fallback
       |       +--> Meet chat capture
-      |       |
-      |       +--> Chrome extension tab audio capture
+      |       +--> optional caption attribution
+      |       +--> Chrome extension tab audio
       |                 |
       |                 v
-      |           Orbit local audio WebSocket
+      |           Orbit audio WebSocket
       |                 |
       |                 v
       |           Deepgram live STT
       |
-      +--> MeetingStore interface
+      +--> meeting intelligence reads
+      |
+      +--> Postgres
               |
-              v
-        Postgres (people, sources, meetings, source_chunks, extraction_runs, decisions, action_items, memories)
-              |
-              v
-        extraction + structured memory persistence + optional RAG path
+              +--> structured artifacts
+              +--> extraction outputs
+              +--> searchable memory chunks + pgvector embeddings
 ```
 
-The important design choice is that meeting persistence is centralized in `orbit/meeting_store.py`. Chat and legacy vector memory remain in the existing memory path, while meeting artifacts now use a v1 persistence schema for auditability and structured extraction.
+At the end of a captured meeting, Orbit stores normalized transcript chunks, runs a structured extraction prompt, and persists:
 
-## Repository Map
+- short and long summaries
+- decisions and rationale
+- action items and owners
+- risks
+- open questions
+- durable company memories
 
-The implementation is organized by product responsibility. See [docs/architecture.md](docs/architecture.md) for the detailed module map and data-flow diagram.
+## Quick Start
 
-```text
-orbit/google_meet/          Google Meet browser automation, chat, captions, audio-extension trigger
-orbit/audio_pipeline/       Deepgram live STT, live STT sessions, PCM silence gating
-orbit/transcripts/          Transcript segment model, normalization, caption attribution
-orbit/storage/meeting_store/ Meeting artifact persistence and Postgres implementation
-orbit/storage/memory_index/  Legacy vector memory index for chat/transcript search
-orbit/whatsapp/             WhatsApp orchestration, capture sessions, live recall, extraction
-orbit/agent/                Deterministic tool wrappers and WhatsApp command parser
-orbit/api/                  FastAPI app and routes
-orbit/config/               Environment and logging adapters around core runtime helpers
-extension/orbit-audio-capture/ Manifest V3 extension for Meet tab audio capture
-tests/whatsapp/             WhatsApp service tests split by domain
-tests/support/              Shared fakes and fixtures
-```
+### Prerequisites
 
-Compatibility modules remain at the old import paths, including `orbit.meet`, `orbit.whatsapp_service`, `orbit.meeting_store`, `orbit.memory`, and `orbit.live_stt`.
+- Python `3.12` or `3.13`
+- Docker with Compose
+- Chrome or Chromium
+- An OpenAI API key
+- A Deepgram API key for live transcription
+- Twilio WhatsApp credentials for the WhatsApp control plane
 
-## How It Works
+Browser Use is not reliable in this project under Python `3.14`.
 
-### 1. Start a meeting from WhatsApp
-
-Send a deterministic command to the configured WhatsApp number:
-
-```text
-join https://meet.google.com/abc-defg-hij
-```
-
-Orbit validates the Meet URL and sender, creates `sources` and `meetings` records, schedules capture, and replies with `meeting_id` and `status`.
-
-### 2. Capture meeting chat
-
-After joining, Orbit opens the Google Meet chat panel, sends an intro message, scans visible chat, and polls for new chat messages.
-
-Captured messages are stored in memory when persistent memory is enabled.
-
-### 3. Check capture status and intelligence
-
-Use deterministic meeting-id based commands:
-
-```text
-status <meeting-id>
-summary <meeting-id>
-decisions <meeting-id>
-actions <meeting-id>
-recent
-open actions
-```
-
-`summary`, `decisions`, and `actions` read persisted meeting intelligence artifacts.
-
-### 4. Capture live meeting transcripts
-
-When live STT is enabled, Orbit posts a capture config into the Meet tab after joining. The local Chrome extension captures the Meet tab audio with `chrome.tabCapture`, streams PCM16 audio to Orbit's local WebSocket, and Orbit forwards the stream to Deepgram.
-
-Final Deepgram transcript segments are normalized, kept in a bounded in-memory live buffer for the active session, and stored in memory. Speaker names are optional: Meet caption scraping can enrich segments when it works, but audio-only transcripts still store normally.
-
-### 5. Persist and extract meeting intelligence
-
-After session completion, Orbit stores transcript chunks and extraction outputs, then persists structured `decisions`, `action_items`, and `memories` for retrieval.
-
-## Setup
-
-Use Python `3.12` or `3.13`. Browser Use currently does not work reliably in this setup under Python `3.14`.
+### Install
 
 ```bash
 python3.12 -m venv .venv-browser-use
 source .venv-browser-use/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 python -m playwright install chromium
-```
-
-Create your environment file:
-
-```bash
 cp .env.example .env
 ```
 
-Fill in the required values:
+### Start Postgres
+
+```bash
+docker compose up -d orbit-postgres
+python scripts/migrate_memory.py
+```
+
+The WhatsApp/FastAPI path requires `DATABASE_URL`. Orbit creates the structured meeting tables automatically on first use. `scripts/migrate_memory.py` applies the searchable-memory schema used for embeddings and recall.
+
+### Configure `.env`
+
+Fill in at least:
 
 ```text
 OPENAI_API_KEY=...
@@ -171,294 +184,236 @@ TWILIO_ALLOWED_FROM=whatsapp:+15551234567
 
 ORBIT_WEBHOOK_HOST=0.0.0.0
 ORBIT_WEBHOOK_PORT=8000
-ORBIT_MAX_PARALLEL_MEETINGS=3
-ORBIT_ORGANIZATION_ID=default
-ORBIT_MEMORY_SEARCH_LIMIT=6
-ORBIT_MEMORY_SIMILARITY_THRESHOLD=0.35
-
 DATABASE_URL=postgresql://orbit:orbit@localhost:5432/orbit
 ```
 
-`DATABASE_URL` is optional. If it is missing, Orbit still runs, but persistent company-memory Q&A is disabled.
+The WhatsApp runtime intentionally supports one allowed control number today through `TWILIO_ALLOWED_FROM`.
 
-## Postgres Persistence
+### Load The Chrome Extension
 
-Requires a Postgres connection in `.env`:
+For local development with `GMEET_USE_SYSTEM_CHROME=true` or an existing CDP browser:
 
-```text
-DATABASE_URL=postgresql://orbit:orbit@localhost:5432/orbit
-```
+1. Open `chrome://extensions`.
+2. Enable Developer mode.
+3. Click **Load unpacked**.
+4. Select [`extension/orbit-audio-capture`](extension/orbit-audio-capture).
 
-Orbit creates all required tables automatically from `meeting_store` schema:
+The extension captures Meet tab audio locally and sends it to Orbit's local WebSocket. The Deepgram API key stays in the backend.
 
-```sql
-people(
-  id uuid primary key default gen_random_uuid(),
-  name text, phone text, email text, created_at timestamptz not null
-)
-
-sources(
-  id uuid primary key default gen_random_uuid(),
-  source_type text not null,
-  url text, title text, raw_text text, raw_payload jsonb, created_at timestamptz not null
-)
-
-meetings(
-  id uuid primary key default gen_random_uuid(),
-  source_id uuid references sources(id) on delete cascade,
-  gmeet_url text not null, status text not null,
-  requested_by_person_id uuid references people(id),
-  started_at timestamptz, ended_at timestamptz,
-  summary_short text, summary_long text,
-  created_at timestamptz not null, updated_at timestamptz not null
-)
-
-source_chunks(
-  id uuid primary key default gen_random_uuid(),
-  source_id uuid not null references sources(id) on delete cascade,
-  chunk_index integer not null,
-  speaker_label text, speaker_person_id uuid references people(id),
-  start_ms integer, end_ms integer,
-  text text not null, metadata jsonb,
-  created_at timestamptz not null
-)
-
-extraction_runs(
-  id uuid primary key default gen_random_uuid(),
-  source_id uuid references sources(id) on delete cascade,
-  meeting_id uuid references meetings(id) on delete cascade,
-  run_type text not null,
-  model text, prompt_version text,
-  output_json jsonb, status text default 'success',
-  error text, created_at timestamptz not null
-)
-
-decisions(
-  id uuid primary key default gen_random_uuid(),
-  meeting_id uuid references meetings(id) on delete cascade,
-  source_id uuid references sources(id) on delete cascade,
-  title text, decision_text text not null,
-  rationale text, owner_text text,
-  confidence numeric, created_at timestamptz not null
-)
-
-action_items(
-  id uuid primary key default gen_random_uuid(),
-  meeting_id uuid references meetings(id) on delete cascade,
-  source_id uuid references sources(id) on delete cascade,
-  task text not null, owner_text text,
-  due_date text, status text not null default 'open',
-  confidence numeric, created_at timestamptz not null
-)
-
-memories(
-  id uuid primary key default gen_random_uuid(),
-  meeting_id uuid references meetings(id) on delete cascade,
-  source_id uuid references sources(id) on delete cascade,
-  memory_type text not null, content text not null,
-  importance text not null default 'medium', confidence numeric,
-  created_at timestamptz not null
-)
-```
-
-Meeting lifecycle writes:
-
-1. `join <meet-link>` resolves sender identity and creates rows in `sources` and `meetings`
-2. capture/save final transcript into `source_chunks`
-3. extraction runs save structured JSON into `extraction_runs.output_json`
-4. extracted arrays are persisted into `decisions`, `action_items`, and `memories`
-
-Developer helpers:
-
-```bash
-python scripts/test_meeting_extraction.py --meeting-id <MEETING_ID>
-python scripts/test_meeting_extraction.py --meeting-id <MEETING_ID> --persist-decisions
-python scripts/test_meeting_extraction.py --meeting-id <MEETING_ID> --persist-action-items
-python scripts/test_meeting_extraction.py --meeting-id <MEETING_ID> --persist-memories
-```
-
-## Run
-
-Direct Google Meet runner:
-
-```bash
-source .venv-browser-use/bin/activate
-python scripts/join_meet.py
-```
-
-WhatsApp agent:
+### Run The WhatsApp Agent
 
 ```bash
 source .venv-browser-use/bin/activate
 python scripts/whatsapp_bot.py
 ```
 
-Expose the FastAPI webhook for Twilio:
+Expose the webhook for Twilio:
 
 ```bash
 ngrok http 8000
 ```
 
-Configure the Twilio WhatsApp webhook as:
+Configure the Twilio WhatsApp webhook:
 
 ```text
 POST https://your-ngrok-domain/twilio/whatsapp
 ```
 
-The app also accepts this equivalent inbound URL:
+FastAPI also exposes:
 
 ```text
-POST https://your-ngrok-domain/api/whatsapp/inbound
+GET  /
+GET  /docs
+POST /api/whatsapp/inbound
+GET  /meetings/{meeting_id}/intelligence
+WS   /internal/audio-stream/{session_id}?token={session_token}
 ```
 
-If port `8000` is busy, use another port:
+### Run The Direct Meet Agent
+
+For a direct local Meet smoke test, set `GMEET_URL` in `.env` and run:
 
 ```bash
-ORBIT_WEBHOOK_PORT=8001 python scripts/whatsapp_bot.py
-ngrok http 8001
+source .venv-browser-use/bin/activate
+ORBIT_LIVE_STT_ENABLED=false python scripts/join_meet.py
 ```
+
+The direct runner does not start the FastAPI audio WebSocket. Keep live STT disabled unless the backend is already running.
 
 ## WhatsApp Commands
 
 ```text
 join https://meet.google.com/abc-defg-hij
-```
-
-Creates and schedules capture for that meeting.
-
-```text
 status <meeting-id>
-```
-
-Returns capture status and timestamps.
-
-```text
 summary <meeting-id>
-```
-
-Returns meeting summary and counts for decisions, action items, and memories.
-
-```text
 decisions <meeting-id>
-```
-
-Returns extracted decisions for the meeting.
-
-```text
 actions <meeting-id>
-```
-
-Returns extracted action items for the meeting.
-
-```text
 recent
-```
-
-Lists recent meetings.
-
-```text
 open actions
+help
 ```
 
-Lists currently open action items.
+The Twilio webhook uses deterministic command parsing. It does not invoke Chrome, Deepgram, or an LLM directly from the parser. Capture scheduling goes through agent tool wrappers and backend dispatch.
 
-Fallback/debug live audio stream from a PulseAudio/PipeWire monitor source:
+## Run The Command Center Demo
 
 ```bash
-.venv-browser-use/bin/python scripts/stream_monitor_audio.py \
-  'ws://127.0.0.1:8000/internal/audio-stream/<session-id>?token=<session-token>' \
-  --source default
+cd frontend/openui-orbit-demo
+npm install
+npm run dev
+```
+
+Build the frontend:
+
+```bash
+npm run build
+```
+
+The demo renders synthetic data for:
+
+- company pulse
+- project velocity and radar
+- decision intelligence
+- open loops
+- team-flow signals
+- AI cost and usage
+- a self-improvement loop
+- an `Ask Orbit` prompt surface
+
+The next implementation step is to connect these view primitives to typed Orbit tools and generate OpenUI responses from prompts against real company context.
+
+## Repository Map
+
+```text
+orbit/google_meet/            Meet browser automation, chat, captions, extension trigger
+orbit/audio_pipeline/         Deepgram streaming, live STT sessions, PCM silence gating
+orbit/transcripts/            Transcript segments, normalization, caption attribution
+orbit/storage/meeting_store/  Structured meeting artifacts and Postgres persistence
+orbit/storage/memory_index/   Chat/transcript embeddings and source-backed recall
+orbit/whatsapp/               Runtime, meeting lifecycle, audio streams, extraction, recall
+orbit/agent/                  Typed tools and deterministic WhatsApp command parser
+orbit/api/                    FastAPI app, Twilio webhook, intelligence route, audio WebSocket
+extension/orbit-audio-capture/ Local Manifest V3 Meet tab-audio capture extension
+frontend/openui-orbit-demo/   Static OpenUI command-center design probe
+scripts/                      Local run, migration, audit, reindex, and extraction helpers
+tests/                        Python and Chrome-extension tests
+docs/                         Architecture notes and live-STT runbook
+```
+
+Compatibility modules remain at older import paths, including `orbit.meet`, `orbit.whatsapp_service`, `orbit.meeting_store`, `orbit.memory`, and `orbit.live_stt`.
+
+## Storage Model
+
+Orbit currently has two complementary persistence paths.
+
+### Structured meeting artifacts
+
+The meeting store creates:
+
+```text
+people
+sources
+meetings
+capture_sessions
+source_chunks
+extraction_runs
+decisions
+action_items
+memories
+```
+
+These tables support meeting lifecycle tracking, source provenance, structured extraction, and API responses. See [`orbit/storage/meeting_store/schema.py`](orbit/storage/meeting_store/schema.py).
+
+### Searchable company memory
+
+The memory index stores raw chat, normalized transcripts, searchable chunks, embedding state, and source metadata for recall. See [`orbit/storage/memory_index/schema.py`](orbit/storage/memory_index/schema.py).
+
+Useful helpers:
+
+```bash
+python scripts/migrate_memory.py
+python scripts/reindex_memory.py
+python scripts/audit_memory.py --show-text
+python scripts/test_meeting_extraction.py --meeting-id <MEETING_ID>
 ```
 
 ## Configuration
 
 | Variable | Purpose |
 | --- | --- |
-| `OPENAI_API_KEY` | OpenAI API key for chat and embeddings |
+| `OPENAI_API_KEY` | OpenAI API key for extraction, recall, and embeddings |
 | `OPENAI_MODEL` | Chat model used by Orbit |
-| `OPENAI_EMBEDDING_MODEL` | Embedding model for memory search |
-| `DEEPGRAM_API_KEY` | Deepgram API key for live STT; backend only, never stored in the extension |
-| `DEEPGRAM_LIVE_MODEL` | Deepgram live STT model, default `nova-3` |
-| `ORBIT_LIVE_STT_ENABLED` | Enable live Meet audio transcription, defaults on when `DEEPGRAM_API_KEY` is set |
-| `ORBIT_AUDIO_WS_BASE_URL` | Local WebSocket base URL for extension audio, default `ws://127.0.0.1:8000` |
-| `ORBIT_CHROME_EXTENSION_PATH` | Unpacked MV3 extension path, default `extension/orbit-audio-capture` |
-| `ORBIT_AUDIO_CAPTURE_STRATEGY` | Audio capture strategy: `chrome_extension` (default) or `server_audio_sink` |
-| `ORBIT_CHROME_CDP_URL` | Existing headed Chrome CDP URL for browser-use to connect to |
-| `ORBIT_EXTENSION_CAPTURE_SHORTCUT` | Shortcut used to activate extension capture, default `Alt+Shift+O` |
-| `DATABASE_URL` | Enables meeting persistence + memory features |
+| `OPENAI_EMBEDDING_MODEL` | Embedding model for searchable memory |
+| `DEEPGRAM_API_KEY` | Backend-only key for live STT |
+| `DEEPGRAM_LIVE_MODEL` | Deepgram live model, default `nova-3` |
+| `ORBIT_LIVE_STT_ENABLED` | Enable Meet audio transcription |
+| `ORBIT_AUDIO_WS_BASE_URL` | Local extension-audio WebSocket base URL |
+| `ORBIT_CHROME_EXTENSION_PATH` | Unpacked extension path |
+| `ORBIT_CHROME_CDP_URL` | Optional existing Chrome CDP URL |
+| `DATABASE_URL` | Required by the WhatsApp backend for persistence and memory |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio auth token |
+| `TWILIO_AUTH_TOKEN` | Twilio auth token and inbound-signature validation secret |
 | `TWILIO_WHATSAPP_FROM` | Twilio WhatsApp sender |
-| `TWILIO_ALLOWED_FROM` | Only this WhatsApp sender can control Orbit |
+| `TWILIO_ALLOWED_FROM` | Single authorized WhatsApp control number |
 | `ORBIT_WEBHOOK_HOST` | FastAPI bind host |
 | `ORBIT_WEBHOOK_PORT` | FastAPI bind port |
-| `ORBIT_MAX_PARALLEL_MEETINGS` | Meeting concurrency limit |
-| `ORBIT_ORGANIZATION_ID` | Stable organization scope for stored memory, default `default` |
-| `ORBIT_MEMORY_SEARCH_LIMIT` | Number of memory chunks retrieved for RAG |
-| `ORBIT_MEMORY_SIMILARITY_THRESHOLD` | Minimum cosine-similarity score for memory retrieval, default `0.35` |
-| `ORBIT_LOG_LEVEL` | Log verbosity. One of `important` (default), `info`, `debug`, `error`, `quiet`. |
-| `GMEET_DISPLAY_NAME` | Name Orbit uses in Google Meet |
-| `GMEET_CHROME_PROFILE_DIRECTORY` | Optional Chrome profile directory to reuse with `GMEET_USE_SYSTEM_CHROME=true` |
-| `GMEET_CHROME_NEW_PROFILE` | When true (default), create a fresh Chrome user profile per system-Chrome run |
-| `GMEET_CHROME_EXECUTABLE_PATH` | Optional explicit Chrome executable path |
-| `GMEET_PREFER_CHROME_FOR_TESTING` | Prefer local Playwright Chrome for Testing for isolated Chrome sessions, default `true` |
-| `GMEET_FAST_JOIN_ENABLED` | Use deterministic DOM-based Meet join before falling back to the LLM browser agent |
-| `GMEET_FAST_JOIN_TIMEOUT_MS` | Maximum time spent on deterministic join before fallback, default `12000` |
-| `GMEET_ADMISSION_WAIT_MS` | Maximum deterministic wait for host admission after Orbit submits a join request, default `120000` (2 minutes). |
-| `GMEET_WAIT_AFTER_JOIN_MS` | Maximum monitoring duration after joining, default `300000` (5 minutes). Orbit checks participants every 30 seconds and leaves earlier after other participants depart and it is the only participant left. |
-| `GMEET_USE_SYSTEM_CHROME` | Use installed Chrome profile instead of managed browser |
-| `HEADLESS` | Run browser in headless mode |
+| `ORBIT_MAX_PARALLEL_MEETINGS` | In-process meeting concurrency limit |
+| `ORBIT_ORGANIZATION_ID` | Organization scope for searchable memory |
+| `ORBIT_MEMORY_SEARCH_LIMIT` | Number of retrieved memory chunks |
+| `ORBIT_MEMORY_SIMILARITY_THRESHOLD` | Minimum memory-search similarity |
+| `ORBIT_LOG_LEVEL` | `important`, `info`, `debug`, `error`, or `quiet` |
+| `GMEET_URL` | Meet URL for the direct runner |
+| `GMEET_DISPLAY_NAME` | Display name used in Google Meet |
+| `GMEET_USE_SYSTEM_CHROME` | Use an installed Chrome profile |
+| `GMEET_FAST_JOIN_ENABLED` | Attempt deterministic DOM join before Browser Use fallback |
+| `GMEET_FAST_JOIN_TIMEOUT_MS` | Deterministic join timeout |
+| `GMEET_ADMISSION_WAIT_MS` | Host-admission wait timeout |
+| `GMEET_WAIT_AFTER_JOIN_MS` | Maximum post-join monitoring duration |
+| `HEADLESS` | Run browser automation headlessly |
+
+See [`.env.example`](.env.example) for the full local template.
 
 ## Development
 
-See [`TESTING.md`](TESTING.md) for the complete local CI checklist and test conventions.
-
-Run tests:
+Run the backend checks:
 
 ```bash
-.venv-browser-use/bin/python -m unittest discover -s tests
+source .venv-browser-use/bin/activate
+python -m ruff check orbit scripts tests
+python -m mypy
+python -m unittest discover -s tests
+python -m compileall -q orbit scripts
 ```
 
-Compile-check the core modules:
+Run the extension checks:
 
 ```bash
-.venv-browser-use/bin/python -m py_compile \
-  orbit/core.py \
-  orbit/meet.py \
-  orbit/meet_types.py \
-  orbit/memory.py \
-  orbit/postgres_memory.py \
-  orbit/meeting_store.py \
-  orbit/whatsapp_app.py \
-  orbit/whatsapp_service.py \
-  orbit/caption_attribution.py \
-  orbit/deepgram_live.py \
-  orbit/live_stt.py \
-  orbit/transcript.py \
-  orbit/transcript_normalizer.py
+node --check extension/orbit-audio-capture/content.js
+node --check extension/orbit-audio-capture/service_worker.js
+node --check extension/orbit-audio-capture/offscreen.js
+node tests/orbit_audio_capture_extension.test.js
+python -m json.tool extension/orbit-audio-capture/manifest.json >/dev/null
 ```
 
-## Current Limits
+See [`TESTING.md`](TESTING.md) for the complete local CI checklist.
 
-- Orbit reads Google Meet chat live and can request live audio transcription through the local Chrome extension.
-- The primary live STT path is headed Chrome under a virtual display, browser-use over CDP, extension tab audio capture, and backend-owned Deepgram streaming.
-- With `ORBIT_CHROME_CDP_URL` or `GMEET_USE_SYSTEM_CHROME=true`, load the unpacked extension manually from `chrome://extensions`. Official Chrome 137+ no longer loads unpacked extensions from command-line flags.
-- PulseAudio/PipeWire monitor capture is a fallback/debug path, not the primary architecture.
-- Speaker attribution is best effort. Google Meet caption scraping can enrich speaker names, but selectors are unstable and failures do not block Deepgram transcript storage.
-- Meeting persistence now indexes raw transcript chunks and extraction artifacts before optional downstream vector indexing.
-- Slack, email, document ingestion, dashboards, multi-company tenancy, and auth are future layers.
-- Google Meet UI changes may require selector updates.
-- Orbit does not bypass Google Meet, WhatsApp, or company access controls.
-- If a meeting requires host approval or a signed-in invited account, Orbit waits or reports the block.
+## Current Boundaries
 
-## Direction
+- Orbit is an early prototype, not a production-ready multi-tenant service.
+- The active live-audio path is the local Chrome extension. Chrome may require manual extension activation before `tabCapture` starts.
+- Google Meet DOM selectors can change without notice.
+- Speaker names are best effort. Deepgram transcript text is the core path; visible Meet captions only enrich attribution.
+- The command-center frontend is synthetic and static today.
+- Capture scheduling uses in-process tasks. A durable queue and workers are future infrastructure.
+- The WhatsApp runtime is intentionally single-controller today.
+- Orbit does not bypass Google Meet admission, Twilio verification, or company access controls.
 
-Orbit is moving toward an agent-native company operating layer:
+## Further Reading
 
-- Reliable meeting agents
-- Persistent organizational memory
-- Retrieval over company activity
-- Agent workflows across meetings, chat, docs, Slack, and email
-- Queryable context for every team
-
-The current repo is the foundation: Meet agent + WhatsApp control plane + swappable memory + RAG.
+- [`docs/architecture.md`](docs/architecture.md) - package map and runtime data flow
+- [`docs/live-stt.md`](docs/live-stt.md) - live transcription architecture and local extension details
+- [`TESTING.md`](TESTING.md) - checks, test layers, and conventions
+- [Microsoft: 2025 Work Trend Index](https://www.microsoft.com/en-us/worklab/work-trend-index/2025-the-year-the-frontier-firm-is-born) - human-agent teams and Frontier Firms
+- [Anthropic: Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) - context as a constrained, curated runtime resource
+- [SAP: AI-Native North-Star Architecture](https://architecture.learning.sap.com/docs/ai-native-north-star-architecture/vision) - the enterprise system-of-context framing
+- [OpenUI: OpenUI Lang](https://www.openui.com/docs/openui-lang) - constrained generative UI language used by the frontend prototype
