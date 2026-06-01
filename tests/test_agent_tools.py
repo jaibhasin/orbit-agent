@@ -623,7 +623,7 @@ class RecentMeetingsToolTests(unittest.IsolatedAsyncioTestCase):
                 await get_recent_meetings(limit=3)
 
         query_rows.assert_awaited_once()
-        sql, params = query_rows.call_args.args[1], query_rows.call_args.args[2]
+        params = query_rows.call_args.args[2]
         self.assertEqual(params[-1], 3)
 
         with patch("orbit.agent.tools.meeting_tools._require_database_url", return_value="postgresql://example"):

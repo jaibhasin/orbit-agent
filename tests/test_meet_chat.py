@@ -25,6 +25,8 @@ class MeetChatTests(unittest.TestCase):
         self.assertIn('Never click "Allow microphone and camera"', task)
         self.assertIn('click its "Close dialog" button (the X) immediately', task)
         self.assertIn("is not a reason to stop", task)
+        self.assertIn("Never combine filling the name with a click", task)
+        self.assertIn("Do not click Terms of Service", task)
 
     def test_orbit_intro_is_detected_as_orbit_authored(self):
         state = MeetingState(
@@ -127,13 +129,13 @@ class ParticipantExitTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(should_leave_when_only_orbit_remains(state, 1))
         self.assertTrue(should_leave_when_only_orbit_remains(state, 1))
 
-    @patch("orbit.meet.process_messages", new_callable=AsyncMock)
-    @patch("orbit.meet.collect_visible_chat_messages", new_callable=AsyncMock, return_value=[])
-    @patch("orbit.meet.collect_visible_captions", new_callable=AsyncMock)
-    @patch("orbit.meet.send_introduction", new_callable=AsyncMock)
-    @patch("orbit.meet.open_chat_panel", new_callable=AsyncMock, return_value=True)
-    @patch("orbit.meet.get_participant_count", new_callable=AsyncMock, return_value=2)
-    @patch("orbit.meet.asyncio.sleep", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.process_messages", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.collect_visible_chat_messages", new_callable=AsyncMock, return_value=[])
+    @patch("orbit.google_meet.chat.collect_visible_captions", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.send_introduction", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.open_chat_panel", new_callable=AsyncMock, return_value=True)
+    @patch("orbit.google_meet.chat.get_participant_count", new_callable=AsyncMock, return_value=2)
+    @patch("orbit.google_meet.chat.asyncio.sleep", new_callable=AsyncMock)
     async def test_monitor_checks_participants_every_thirty_seconds(
         self,
         sleep,
@@ -153,12 +155,12 @@ class ParticipantExitTests(unittest.IsolatedAsyncioTestCase):
         collect_captions.assert_not_awaited()
         self.assertEqual(state.leave_reason, "Meeting monitoring duration elapsed.")
 
-    @patch("orbit.meet.process_messages", new_callable=AsyncMock)
-    @patch("orbit.meet.collect_visible_chat_messages", new_callable=AsyncMock, return_value=[])
-    @patch("orbit.meet.collect_visible_captions", new_callable=AsyncMock)
-    @patch("orbit.meet.send_introduction", new_callable=AsyncMock)
-    @patch("orbit.meet.open_chat_panel", new_callable=AsyncMock, return_value=True)
-    @patch("orbit.meet.get_participant_count", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.process_messages", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.collect_visible_chat_messages", new_callable=AsyncMock, return_value=[])
+    @patch("orbit.google_meet.chat.collect_visible_captions", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.send_introduction", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.open_chat_panel", new_callable=AsyncMock, return_value=True)
+    @patch("orbit.google_meet.chat.get_participant_count", new_callable=AsyncMock)
     async def test_monitor_exits_when_stop_requested(
         self,
         get_count,
@@ -191,8 +193,9 @@ class JoinDetectionTests(unittest.IsolatedAsyncioTestCase):
             value = next(self.results)
             return value if isinstance(value, str) else json.dumps(value)
 
-    @patch("orbit.meet.asyncio.sleep", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.asyncio.sleep", new_callable=AsyncMock)
     async def test_waiting_for_host_then_joins(self, sleep):
+        on_waiting = AsyncMock()
         page = self.FakePage(
             [
                 {"waiting_for_host": True, "denied": False, "blocked": False, "has_joined_control": False},
@@ -201,14 +204,15 @@ class JoinDetectionTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
 
-        joined, status = await ensure_joined(page, timeout_ms=9000)
+        joined, status = await ensure_joined(page, timeout_ms=9000, on_waiting=on_waiting)
 
         self.assertTrue(joined)
         self.assertIsNotNone(status)
         self.assertTrue(status["has_joined_control"])
+        on_waiting.assert_awaited_once()
         self.assertGreaterEqual(sleep.await_count, 2)
 
-    @patch("orbit.meet.asyncio.sleep", new_callable=AsyncMock)
+    @patch("orbit.google_meet.chat.asyncio.sleep", new_callable=AsyncMock)
     async def test_denied_join_stays_not_joined(self, sleep):
         page = self.FakePage(
             [
@@ -275,6 +279,7 @@ class TriggerExtensionAudioCaptureTests(unittest.IsolatedAsyncioTestCase):
             [
                 True,
                 '{"found": true, "x": 120.8, "y": 45.2}',
+                True,
                 '{"label": "Orbit audio active", "disabled": true}',
             ]
         )
@@ -291,12 +296,14 @@ class TriggerExtensionAudioCaptureTests(unittest.IsolatedAsyncioTestCase):
             state.live_stt_status_detail,
             "Orbit extension accepted the audio capture request.",
         )
-        page._mouse.click.assert_awaited_once_with(120, 45)
+        page._mouse.click.assert_not_awaited()
         page.press.assert_not_awaited()
 
-    @patch("orbit.meet.asyncio.sleep", new_callable=AsyncMock)
+    @patch("orbit.google_meet.extension_audio.asyncio.sleep", new_callable=AsyncMock)
     async def test_uses_shortcut_when_audio_button_is_missing(self, sleep):
-        page = self.FakePage([True] + ['{"found": false}'] * 10)
+        page = self.FakePage(
+            [True] + ['{"found": false}'] * 10 + ['{"label": "Orbit audio active", "disabled": true}']
+        )
         state = self.build_state()
 
         result = await trigger_extension_audio_capture(
@@ -314,7 +321,9 @@ class TriggerExtensionAudioCaptureTests(unittest.IsolatedAsyncioTestCase):
             [
                 True,
                 '{"found": true, "x": 120.8, "y": 45.2}',
+                True,
                 '{"label": "Use Alt+Shift+O or the extension icon", "disabled": false}',
+                '{"label": "Orbit audio active", "disabled": true}',
             ]
         )
         state = self.build_state()
@@ -334,6 +343,7 @@ class TriggerExtensionAudioCaptureTests(unittest.IsolatedAsyncioTestCase):
                 True,
                 '{"found": true, "x": 120.8, "y": 45.2}',
                 RuntimeError("page rerendered"),
+                '{"label": "Orbit audio active", "disabled": true}',
             ]
         )
         original_evaluate = page.evaluate
@@ -356,7 +366,7 @@ class TriggerExtensionAudioCaptureTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result)
         page.press.assert_awaited_once_with("Alt+Shift+O")
 
-    @patch("orbit.meet.asyncio.sleep", new_callable=AsyncMock)
+    @patch("orbit.google_meet.extension_audio.asyncio.sleep", new_callable=AsyncMock)
     async def test_returns_false_when_button_and_shortcut_activation_fail(self, sleep):
         page = self.FakePage([True] + ['{"found": false}'] * 10)
         page.press.side_effect = RuntimeError("shortcut unavailable")

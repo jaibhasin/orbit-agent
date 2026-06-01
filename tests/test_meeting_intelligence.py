@@ -11,7 +11,7 @@ except ModuleNotFoundError:
     TestClient = None
 
 if FastAPI is not None:
-    import orbit.meeting_intelligence_routes as meeting_intelligence_routes
+    import orbit.api.routes.meeting_intelligence as meeting_intelligence_routes
     from orbit.meeting_intelligence_repository import MeetingIntelligenceRepository
 else:
     meeting_intelligence_routes = None

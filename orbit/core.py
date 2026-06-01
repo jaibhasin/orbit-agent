@@ -10,7 +10,7 @@ from pathlib import Path
 import logging
 
 
-ENV_PATH = Path(".env")
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 DEBUG_DIR = Path("debug")
 CONVERSATION_DIR = DEBUG_DIR / "browser-use"
 BROWSER_USE_VENV_DIR = Path(".venv-browser-use")
@@ -94,10 +94,34 @@ def configure_dependency_logging():
 
 
 def load_dotenv():
-    if not ENV_PATH.exists():
+    env_paths = [
+        ENV_PATH,
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent / ".env",
+        Path(__file__).resolve().parents[1] / "scripts" / ".env",
+        Path(__file__).resolve().parents[2] / ".env" if len(Path(__file__).resolve().parts) > 2 else None,
+    ]
+
+    candidate_paths = [path for path in env_paths if path is not None]
+    normalized_paths = []
+    for candidate in candidate_paths:
+        normalized = candidate.expanduser().resolve()
+        if normalized not in normalized_paths:
+            normalized_paths.append(normalized)
+
+    source_path = None
+    for candidate in normalized_paths:
+        if candidate.exists():
+            source_path = candidate
+            break
+
+    if source_path is None:
         return
 
-    for raw_line in ENV_PATH.read_text().splitlines():
+    if source_path != ENV_PATH.resolve():
+        log(f"Loaded environment from {source_path}", level="debug")
+
+    for raw_line in source_path.read_text().splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -233,10 +257,50 @@ def ensure_browser_use_venv(argv=None, extra_imports=None):
             stderr=subprocess.DEVNULL,
         )
     except subprocess.CalledProcessError:
-        raise RuntimeError(
-            "The Browser Use venv exists but dependencies are missing. Run "
-            f"`{target_python} -m pip install -r requirements.txt` and retry."
+        requirements_path = Path(__file__).resolve().parents[1] / "requirements.txt"
+        if not requirements_path.exists():
+            raise RuntimeError(
+                "The Browser Use venv exists but dependencies are missing, and "
+                f"`{requirements_path}` could not be found to auto-install them."
+            )
+        log(
+            "Browser-use virtualenv appears missing dependencies; installing from requirements.txt.",
+            level="important",
         )
+        try:
+            subprocess.run(
+                [
+                    str(target_python),
+                    "-m",
+                    "pip",
+                    "install",
+                    "-r",
+                    str(requirements_path),
+                ],
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            raise RuntimeError(
+                "The Browser Use venv exists but dependencies could not be installed. "
+                f"Run `{target_python} -m pip install -r requirements.txt` and retry."
+            )
+
+        try:
+            subprocess.run(
+                [
+                    str(target_python),
+                    "-c",
+                    import_check,
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError:
+            raise RuntimeError(
+                "The Browser Use venv exists but dependencies are still missing or incompatible. "
+                f"Check `{requirements_path}` and run `{target_python} -m pip install -r requirements.txt`."
+            )
 
     log(f"Re-launching with {target_python}", level="debug")
     relaunched_env = os.environ.copy()

@@ -53,16 +53,14 @@ class AudioCaptureStrategyTests(unittest.TestCase):
         else:
             os.environ["ORBIT_AUDIO_CAPTURE_STRATEGY"] = self._orig_strategy
 
-    def test_default_strategy_is_chrome_extension(self):
+    def test_strategy_is_always_chrome_extension(self):
         os.environ.pop("ORBIT_AUDIO_CAPTURE_STRATEGY", None)
         self.assertEqual(get_audio_capture_strategy(), DEFAULT_AUDIO_CAPTURE_STRATEGY)
         self.assertIn("chrome_extension", ALLOWED_AUDIO_CAPTURE_STRATEGIES)
 
-    def test_server_audio_sink_strategy_is_selected(self):
         os.environ["ORBIT_AUDIO_CAPTURE_STRATEGY"] = "server_audio_sink"
-        self.assertEqual(get_audio_capture_strategy(), "server_audio_sink")
+        self.assertEqual(get_audio_capture_strategy(), DEFAULT_AUDIO_CAPTURE_STRATEGY)
 
-    def test_invalid_strategy_falls_back_to_default(self):
         os.environ["ORBIT_AUDIO_CAPTURE_STRATEGY"] = "unsupported"
         self.assertEqual(get_audio_capture_strategy(), DEFAULT_AUDIO_CAPTURE_STRATEGY)
 

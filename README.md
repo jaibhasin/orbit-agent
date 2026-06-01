@@ -72,37 +72,24 @@ The important design choice is that meeting persistence is centralized in `orbit
 
 ## Repository Map
 
+The implementation is organized by product responsibility. See [docs/architecture.md](docs/architecture.md) for the detailed module map and data-flow diagram.
+
 ```text
-scripts/
-  join_meet.py          Direct Google Meet runner
-  whatsapp_bot.py       WhatsApp/FastAPI entrypoint
-  stream_monitor_audio.py
-                        Fallback/debug PulseAudio/PipeWire monitor streamer
-
-orbit/
-  core.py               Env loading, logging, runtime helpers
-  caption_attribution.py
-                        Best-effort caption speaker attribution
-  deepgram_live.py      Deepgram live STT WebSocket client + event parsing
-  live_stt.py           Live STT session manager
-  meet.py               Google Meet browser automation + chat monitoring
-  meet_types.py         Meeting/session/chat dataclasses
-  whatsapp_app.py       FastAPI app and Twilio webhook route
-  whatsapp_service.py   WhatsApp orchestration and agent behavior
-  meeting_store.py      Postgres persistence for people/sources/meetings/source_chunks/extraction_runs/decisions/action_items/memories
-  memory.py             Swappable memory service interface
-  postgres_memory.py    Postgres + pgvector memory implementation
-  transcript.py         Transcript segment dataclass
-  transcript_normalizer.py
-
-extension/orbit-audio-capture/
-  Manifest V3 Chrome extension for Meet tab audio capture
-
-tests/
-  test_whatsapp_memory.py
+orbit/google_meet/          Google Meet browser automation, chat, captions, audio-extension trigger
+orbit/audio_pipeline/       Deepgram live STT, live STT sessions, PCM silence gating
+orbit/transcripts/          Transcript segment model, normalization, caption attribution
+orbit/storage/meeting_store/ Meeting artifact persistence and Postgres implementation
+orbit/storage/memory_index/  Legacy vector memory index for chat/transcript search
+orbit/whatsapp/             WhatsApp orchestration, capture sessions, live recall, extraction
+orbit/agent/                Deterministic tool wrappers and WhatsApp command parser
+orbit/api/                  FastAPI app and routes
+orbit/config/               Environment and logging adapters around core runtime helpers
+extension/orbit-audio-capture/ Manifest V3 extension for Meet tab audio capture
+tests/whatsapp/             WhatsApp service tests split by domain
+tests/support/              Shared fakes and fixtures
 ```
 
-For the live STT flow, see [docs/live-stt.md](docs/live-stt.md).
+Compatibility modules remain at the old import paths, including `orbit.meet`, `orbit.whatsapp_service`, `orbit.meeting_store`, `orbit.memory`, and `orbit.live_stt`.
 
 ## How It Works
 
@@ -411,6 +398,7 @@ Fallback/debug live audio stream from a PulseAudio/PipeWire monitor source:
 | `ORBIT_MEMORY_SIMILARITY_THRESHOLD` | Minimum cosine-similarity score for memory retrieval, default `0.35` |
 | `ORBIT_LOG_LEVEL` | Log verbosity. One of `important` (default), `info`, `debug`, `error`, `quiet`. |
 | `GMEET_DISPLAY_NAME` | Name Orbit uses in Google Meet |
+| `GMEET_ADMISSION_WAIT_MS` | Maximum deterministic wait for host admission after Orbit submits a join request, default `120000` (2 minutes). |
 | `GMEET_WAIT_AFTER_JOIN_MS` | Maximum monitoring duration after joining, default `300000` (5 minutes). Orbit checks participants every 30 seconds and leaves earlier after other participants depart and it is the only participant left. |
 | `GMEET_USE_SYSTEM_CHROME` | Use installed Chrome profile instead of managed browser |
 | `HEADLESS` | Run browser in headless mode |

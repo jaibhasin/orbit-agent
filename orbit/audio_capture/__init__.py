@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from .server_audio_sink import (
     ServerAudioSinkHandle,
     build_ffmpeg_command,
@@ -14,16 +12,7 @@ DEFAULT_AUDIO_CAPTURE_STRATEGY = "chrome_extension"
 
 
 def get_audio_capture_strategy() -> str:
-    """
-    Return the audio capture strategy.
-
-    Supported values:
-    - chrome_extension
-    - server_audio_sink
-    """
-    value = (os.environ.get("ORBIT_AUDIO_CAPTURE_STRATEGY") or "").strip().lower()
-    if value in ALLOWED_AUDIO_CAPTURE_STRATEGIES:
-        return value
+    """Return the active audio capture strategy (`chrome_extension` only)."""
     return DEFAULT_AUDIO_CAPTURE_STRATEGY
 
 

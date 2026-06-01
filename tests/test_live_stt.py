@@ -106,7 +106,7 @@ def final_deepgram_message(text="we should launch on friday"):
 
 
 class LiveSTTTests(unittest.IsolatedAsyncioTestCase):
-    @patch("orbit.live_stt.log")
+    @patch("orbit.audio_pipeline.live_stt.log")
     async def test_final_deepgram_message_is_normalized_and_stored(self, log):
         memory = FakeMemory()
         state = build_state()
@@ -144,7 +144,7 @@ class LiveSTTTests(unittest.IsolatedAsyncioTestCase):
             messages,
         )
 
-    @patch("orbit.live_stt.log")
+    @patch("orbit.audio_pipeline.live_stt.log")
     async def test_transcript_persistence_failure_is_queued_and_retried(self, log):
         memory = FlakyMemory()
         session = LiveSTTSession(

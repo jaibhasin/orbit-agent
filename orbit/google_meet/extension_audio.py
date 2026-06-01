@@ -1,0 +1,145 @@
+# ruff: noqa: F401,F403,F405
+from __future__ import annotations
+
+from .common import *
+from .dom import evaluate_json
+
+
+async def trigger_extension_audio_capture(page, state, audio_stream_ws_url):
+    if not audio_stream_ws_url:
+        return False
+
+    async def _read_button_state():
+        return await evaluate_json(
+            page,
+            """() => {
+                const button = document.getElementById('orbit-audio-capture-button');
+                if (!button) return JSON.stringify({ found: false });
+                const rect = button.getBoundingClientRect();
+                return JSON.stringify({
+                    found: true,
+                    disabled: Boolean(button?.disabled),
+                    label: String(button?.textContent || ''),
+                    x: rect.left + rect.width / 2,
+                    y: rect.top + rect.height / 2,
+                });
+            }""",
+        )
+
+    async def _read_activation_state():
+        status = await _read_button_state()
+        if not status:
+            return None
+        label = str(status.get("label") or "").strip().lower()
+        if status.get("disabled") or "audio active" in label or "orbit audio capture active" in label:
+            return "active"
+        if "starting orbit audio" in label:
+            return "starting"
+        if "use alt+shift+o" in label:
+            return "shortcut"
+        return None
+
+    async def _wait_for_activation(timeout_seconds: float = 2.5, include_starting: bool = False):
+        attempts = max(1, int(timeout_seconds / 0.2))
+        for _ in range(attempts):
+            activation_state = await _read_activation_state()
+            if activation_state and (activation_state != "starting" or include_starting):
+                return activation_state
+            await asyncio.sleep(0.2)
+        return None
+
+    payload = {
+        "source": "orbit",
+        "type": "ORBIT_START_CAPTURE",
+        "sessionId": state.session_id,
+        "meetingId": state.meeting_code,
+        "webSocketUrl": audio_stream_ws_url,
+        "audioFormat": {
+            "encoding": "linear16",
+            "sampleRate": 16000,
+            "channels": 1,
+        },
+    }
+
+    try:
+        await page.evaluate(
+            """(payload) => {
+                window.postMessage(payload, window.location.origin);
+                return true;
+            }""",
+            payload,
+        )
+        state.live_stt_status_detail = "Extension capture start message posted."
+        log("Posted Orbit extension capture start message.", state.session_id, level="debug")
+    except Exception as error:
+        state.live_stt_status_detail = f"Extension capture start message failed: {error}"
+        log(state.live_stt_status_detail, state.session_id, level="error")
+        return False
+
+    button_clicked = False
+    for _ in range(10):
+        try:
+            click_result = await _read_button_state()
+            if click_result and click_result["found"]:
+                await page.evaluate(
+                    """() => {
+                        const button = document.getElementById("orbit-audio-capture-button");
+                        if (button) {
+                            button.click();
+                            return true;
+                        }
+                        return false;
+                    }""",
+                )
+                log("Clicked the injected Orbit audio capture button.", state.session_id, level="debug")
+                button_clicked = True
+                break
+        except Exception as error:
+            log(f"Orbit audio capture button click failed: {error}", state.session_id, level="debug")
+            break
+        await asyncio.sleep(0.2)
+
+    if not button_clicked:
+        log("Orbit audio capture button not found; extension may not have injected yet.", state.session_id, level="debug")
+
+    if button_clicked:
+        activation_state = await _wait_for_activation(include_starting=True)
+        if activation_state == "active":
+            state.live_stt_status_detail = "Orbit extension accepted the audio capture request."
+            log(state.live_stt_status_detail, state.session_id, level="debug")
+            return True
+        if activation_state == "starting":
+            state.live_stt_status_detail = (
+                "Orbit audio capture button is starting capture. Treating as accepted."
+            )
+            log(state.live_stt_status_detail, state.session_id, level="debug")
+            return True
+        if activation_state == "shortcut":
+            log("Orbit audio button requested extension shortcut fallback.", state.session_id, level="debug")
+
+    shortcut = os.environ.get("ORBIT_EXTENSION_CAPTURE_SHORTCUT", "Alt+Shift+O")
+    try:
+        if hasattr(page, "keyboard"):
+            await page.keyboard.press(shortcut)
+        else:
+            await page.press(shortcut)
+        state.live_stt_status_detail = f"Tried Orbit extension activation shortcut: {shortcut}"
+        log(f"Tried Orbit extension activation shortcut: {shortcut}", state.session_id, level="debug")
+        activation_state = await _wait_for_activation(include_starting=True)
+        if activation_state == "active":
+            state.live_stt_status_detail = "Orbit extension accepted the audio capture request."
+            log(state.live_stt_status_detail, state.session_id, level="debug")
+            return True
+        if activation_state == "starting":
+            state.live_stt_status_detail = "Orbit extension shortcut is still starting capture. Treating as accepted."
+            log(state.live_stt_status_detail, state.session_id, level="debug")
+            return True
+        state.live_stt_status_detail = (
+            "Orbit extension activation was attempted, but capture button did not show an active state."
+        )
+        log(state.live_stt_status_detail, state.session_id, level="important")
+        return False
+    except Exception as error:
+        state.live_stt_status_detail = f"Orbit extension activation shortcut failed: {error}"
+        log(state.live_stt_status_detail, state.session_id, level="error")
+        return False

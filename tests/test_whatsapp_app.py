@@ -30,14 +30,14 @@ except (ModuleNotFoundError, RuntimeError):
 class WhatsAppAppTests(unittest.TestCase):
     @unittest.skipIf(TestClient is None, "fastapi TestClient is not installed")
     def test_inbound_webhook_returns_twiml_and_does_not_use_send_whatsapp_reply(self):
-        with patch("orbit.whatsapp_app.OrbitWhatsAppService") as service_cls:
+        with patch("orbit.api.app.OrbitWhatsAppService") as service_cls:
             service = MagicMock()
             service.twilio_auth_token = "test-auth-token"
             service_cls.return_value = service
 
-            with patch("orbit.whatsapp_app.register_capture_service") as register_service:
-                with patch("orbit.whatsapp_app.unregister_capture_service") as unregister_service:
-                    with patch("orbit.whatsapp_app.handle_whatsapp_command") as handler:
+            with patch("orbit.api.app.register_capture_service") as register_service:
+                with patch("orbit.api.app.unregister_capture_service") as unregister_service:
+                    with patch("orbit.api.app.handle_whatsapp_command") as handler:
                         handler.return_value = "help text"
 
                         with patch("orbit.agent.tools.whatsapp_tools.send_whatsapp_reply") as send_reply:
