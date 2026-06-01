@@ -50,15 +50,21 @@ class MeetingSessionMixin:
 
     async def start_single_meeting_session(self, meet_url, from_number=None, profile_name=None):
         meeting_code = extract_meeting_code(meet_url)
+        normalized_meeting_code = meeting_code.lower()
 
         async with self.lock: # prevents race conditions when multiple users start same meeting
             if any(active.state.meeting_code == meeting_code for active in self.active_sessions.values()):
                 return {"status": "duplicate", "meeting_code": meeting_code}
 
-            if len(self.active_sessions) >= self.max_parallel_meetings:
+            if normalized_meeting_code in self.pending_meeting_starts:
+                return {"status": "duplicate", "meeting_code": meeting_code}
+
+            if len(self.active_sessions) + len(self.pending_meeting_starts) >= self.max_parallel_meetings:
                 return {"status": "capacity", "meeting_code": meeting_code}
 
+            self.pending_meeting_starts.add(normalized_meeting_code)
             session_id = self.build_session_id(meeting_code)
+        try:
             meeting_record = await self._create_meeting_record(meet_url, from_number, profile_name)
             meeting_id, source_id = meeting_record
             capture_session_id = None
@@ -89,10 +95,20 @@ class MeetingSessionMixin:
                 capture_session_id=capture_session_id,
                 created_at=now_iso(),
             )
-            self.active_sessions[session_id] = active
-            active.task = asyncio.create_task(self._run_session(active, config))
+            async with self.lock:
+                self.pending_meeting_starts.discard(normalized_meeting_code)
+                if any(active.state.meeting_code == meeting_code for active in self.active_sessions.values()):
+                    return {"status": "duplicate", "meeting_code": meeting_code}
+                if len(self.active_sessions) >= self.max_parallel_meetings:
+                    return {"status": "capacity", "meeting_code": meeting_code}
+
+                self.active_sessions[session_id] = active
+                active.task = asyncio.create_task(self._run_session(active, config))
 
             return {"status": "started", "meeting_code": meeting_code}
+        finally:
+            async with self.lock:
+                self.pending_meeting_starts.discard(normalized_meeting_code)
 
     async def start_meeting_capture_session(
         self,

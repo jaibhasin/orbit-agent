@@ -4,11 +4,11 @@ Numbered bugs and issues to address.
 
 ---
 
-**1.** `_persistent_meeting_status` (`meeting_sessions.py`) — After join, a later `"error"` status maps to `"joining"` instead of staying `live`/`failed`. Check `state.joined_at` before pre-join status mapping.
+(FIXED)**1.** `_persistent_meeting_status` (`meeting_sessions.py`) — After join, a later `"error"` status maps to `"joining"` instead of staying `live`/`failed`. Check `state.joined_at` before pre-join status mapping.
 
-**2.** Duplicate WhatsApp on stop (`stop_active_meeting` + `handle_session_finished`) — User gets both “stopped monitoring” and “finished Meet” messages. Skip finish message when `stop_requested`.
+(FIXED)**2.** Duplicate WhatsApp on stop (`stop_active_meeting` + `handle_session_finished`) — User gets both “stopped monitoring” and “finished Meet” messages. Skip finish message when `stop_requested`.
 
-**3.** Lock held during DB I/O in `start_single_meeting_session` — Blocks other session ops while creating meeting/capture rows. Reserve slot under lock; persist outside.
+(FIXED)**3.** Lock held during DB I/O in `start_single_meeting_session` — Blocks other session ops while creating meeting/capture rows. Reserve slot under lock; persist outside.
 
 **4.** Remove optional DB persistence — Meeting/capture rows should be required, not best-effort. Today `_create_meeting_record` returns `(None, None)` when `from_number` or `meeting_store` is missing, DB errors are swallowed, and lines 65–81 skip capture-session creation when IDs are absent. Remove `DisabledMeetingStore` fallback for production paths, drop defensive `getattr` guards where the store must exist, and fail fast (or reject the WhatsApp request) if person/meeting/capture rows cannot be created.
 

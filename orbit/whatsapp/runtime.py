@@ -38,6 +38,7 @@ class RuntimeMixin:
             health_event_handler=self._handle_live_stt_health_event,
         )
         self.active_sessions: dict[str, ActiveMeeting] = {}
+        self.pending_meeting_starts: set[str] = set()
         # TODO: make dialogue history durable before running multiple workers or relying on restart continuity.
         self.dialogue_history: list[DialogueTurn] = []
         self.lock = asyncio.Lock()
@@ -96,4 +97,3 @@ class RuntimeMixin:
             lines.append(f"User: {turn.inbound}")
             lines.append(f"Orbit: {turn.reply}")
         return "\n".join(lines)
-
