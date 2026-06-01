@@ -29,7 +29,13 @@ class RuntimeMixin:
 
         self.twilio_client = Client(self.twilio_account_sid, self.twilio_auth_token)
         self.openai_client = AsyncOpenAI(api_key=self.openai_api_key)
-        self.meeting_store = build_meeting_store(self._read_env("DATABASE_URL"))
+        database_url = self._read_env("DATABASE_URL")
+        if not database_url:
+            raise RuntimeError(
+                "DATABASE_URL is required for WhatsApp meeting persistence. "
+                "Set DATABASE_URL in your environment before starting Orbit."
+            )
+        self.meeting_store = build_meeting_store(database_url)
         self.memory = build_memory_service(self.openai_client, self.model_name)
         self.live_stt = LiveSTTManager(
             memory=self.memory,

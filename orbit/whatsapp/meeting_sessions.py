@@ -19,6 +19,7 @@ class MeetingSessionMixin:
         started = []
         duplicates = []
         rejected = []
+        failed = []
 
         for meet_url in meet_links:
             start_result = await self.start_single_meeting_session(
@@ -30,6 +31,9 @@ class MeetingSessionMixin:
                 started.append(start_result["meeting_code"])
             elif start_result["status"] == "duplicate":
                 duplicates.append(start_result["meeting_code"])
+            elif start_result["status"] == "failed":
+                reason = start_result.get("reason")
+                failed.append(f"{start_result['meeting_code']}{f' ({reason})' if reason else ''}")
             else:
                 rejected.append(start_result["meeting_code"])
 
@@ -46,6 +50,8 @@ class MeetingSessionMixin:
             parts.append(
                 f"At capacity ({self.max_parallel_meetings} meetings), so I skipped: {', '.join(rejected)}."
             )
+        if failed:
+            parts.append(f"Could not start: {', '.join(failed)}.")
         return " ".join(parts)
 
     async def start_single_meeting_session(self, meet_url, from_number=None, profile_name=None):
@@ -65,25 +71,25 @@ class MeetingSessionMixin:
             self.pending_meeting_starts.add(normalized_meeting_code)
             session_id = self.build_session_id(meeting_code)
         try:
-            meeting_record = await self._create_meeting_record(meet_url, from_number, profile_name)
-            meeting_id, source_id = meeting_record
-            capture_session_id = None
-            if meeting_id and source_id:
-                store = getattr(self, "meeting_store", None)
-                create_capture_session = getattr(store, "create_capture_session", None)
-                if callable(create_capture_session):
-                    try:
-                        from orbit import whatsapp_service as whatsapp_service_facade
-
-                        capture_session = await create_capture_session(
-                            meeting_id,
-                            source_id,
-                            capture_strategy=whatsapp_service_facade.get_audio_capture_strategy(),
-                            stt_provider="deepgram",
-                        )
-                        capture_session_id = capture_session.get("id") if isinstance(capture_session, dict) else None
-                    except Exception as error:
-                        log(f"Failed to create capture session for {meeting_id}: {error}", session_id, level="error")
+            meeting_id, source_id = await self._create_meeting_record(meet_url, from_number, profile_name)
+            from orbit import whatsapp_service as whatsapp_service_facade
+            try:
+                capture_session = await self.meeting_store.create_capture_session(
+                    meeting_id,
+                    source_id,
+                    capture_strategy=whatsapp_service_facade.get_audio_capture_strategy(),
+                    stt_provider="deepgram",
+                )
+                capture_session_id = capture_session.get("id") if isinstance(capture_session, dict) else None
+                if not capture_session_id:
+                    raise RuntimeError("Capture session create returned no id.")
+            except Exception as error:
+                log(f"Failed to create capture session for {meeting_id}: {error}", session_id, level="error")
+                return {
+                    "status": "failed",
+                    "meeting_code": meeting_code,
+                    "reason": "capture_session_create_failed",
+                }
             config = self.build_session_config(meet_url, session_id, capture_session_id=capture_session_id)
             state = build_meeting_state(config)
             active = ActiveMeeting(
@@ -106,6 +112,17 @@ class MeetingSessionMixin:
                 active.task = asyncio.create_task(self._run_session(active, config))
 
             return {"status": "started", "meeting_code": meeting_code}
+        except Exception as error:
+            log(
+                f"Failed to create meeting persistence for {meeting_code}: {error}",
+                session_id,
+                level="error",
+            )
+            return {
+                "status": "failed",
+                "meeting_code": meeting_code,
+                "reason": "meeting_record_create_failed",
+            }
         finally:
             async with self.lock:
                 self.pending_meeting_starts.discard(normalized_meeting_code)
@@ -152,31 +169,32 @@ class MeetingSessionMixin:
 
     async def _create_meeting_record(self, meet_url, from_number, profile_name=None):
         if not from_number:
-            return None, None
+            raise ValueError("from_number is required to create meeting records.")
 
-        store = getattr(self, "meeting_store", None)
-        if not store:
-            return None, None
+        store = self.meeting_store
+        person_id = await store.find_or_create_person_by_phone(
+            normalize_whatsapp_phone(from_number),
+            name=profile_name,
+        )
+        if not person_id:
+            raise RuntimeError("Failed to create or load person row for WhatsApp sender.")
 
-        try:
-            person_id = await store.find_or_create_person_by_phone(
-                normalize_whatsapp_phone(from_number),
-                name=profile_name,
-            )
-            source_id = await store.create_source(
-                "gmeet",
-                url=meet_url,
-            )
-            meeting_id = await store.create_meeting(
-                gmeet_url=meet_url,
-                source_id=source_id,
-                status="joining",
-                requested_by_person_id=person_id,
-            )
-            return meeting_id, source_id
-        except Exception as error:
-            log(f"Failed to create meeting persistence row for {meet_url}: {error}", level="error")
-            return None, None
+        source_id = await store.create_source(
+            "gmeet",
+            url=meet_url,
+        )
+        if not source_id:
+            raise RuntimeError("Failed to create source row.")
+
+        meeting_id = await store.create_meeting(
+            gmeet_url=meet_url,
+            source_id=source_id,
+            status="joining",
+            requested_by_person_id=person_id,
+        )
+        if not meeting_id:
+            raise RuntimeError("Failed to create meeting row.")
+        return meeting_id, source_id
 
     async def _run_session(self, active, config):
         callbacks = MeetingSessionCallbacks(
@@ -445,13 +463,9 @@ class MeetingSessionMixin:
         if not meeting_status:
             return
 
-        store = getattr(self, "meeting_store", None)
-        if not store:
-            return
-
         started_at = state.joined_at if meeting_status == "live" else None
         try:
-            await store.update_meeting_status(
+            await self.meeting_store.update_meeting_status(
                 active.meeting_id,
                 meeting_status,
                 started_at=started_at,

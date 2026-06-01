@@ -51,9 +51,7 @@ class MeetingExtractionMixin:
         if not source_id:
             raise ValueError("sourceId is required for extraction.")
 
-        store = getattr(self, "meeting_store", None)
-        if not store:
-            raise RuntimeError("Meeting store is not configured.")
+        store = self.meeting_store
 
         if not skip_status_updates:
             await store.update_meeting_status(
@@ -356,10 +354,6 @@ class MeetingExtractionMixin:
         if not active or not active.meeting_id:
             return
 
-        store = getattr(self, "meeting_store", None)
-        if not store:
-            return
-
         summary_short, summary_long = self._build_meeting_summary(state)
         ended_at = state.finished_at or now_iso()
         final_summary_short = summary_short
@@ -373,7 +367,7 @@ class MeetingExtractionMixin:
         try:
             if track_capture_finalization:
                 await self._update_capture_session_status(active, "processing")
-            await store.update_meeting_status(
+            await self.meeting_store.update_meeting_status(
                 active.meeting_id,
                 "processing",
                 ended_at=ended_at,
@@ -383,7 +377,7 @@ class MeetingExtractionMixin:
             )
             chunks = self._build_transcript_source_chunks(state)
             if chunks:
-                await store.save_transcript_chunks(active.source_id, chunks)
+                await self.meeting_store.save_transcript_chunks(active.source_id, chunks)
             extraction = await self.run_meeting_extraction(
                 active.meeting_id,
                 active.source_id,
@@ -404,12 +398,12 @@ class MeetingExtractionMixin:
 
             if extraction.get("status") == "failed":
                 if track_capture_finalization:
-                    await self._mark_capture_session_failed(
-                        active,
-                        "MEETING_EXTRACTION_FAILED",
-                        "Meeting capture extraction failed.",
-                    )
-                await store.update_meeting_status(
+                await self._mark_capture_session_failed(
+                    active,
+                    "MEETING_EXTRACTION_FAILED",
+                    "Meeting capture extraction failed.",
+                )
+                await self.meeting_store.update_meeting_status(
                     active.meeting_id,
                     "failed",
                     ended_at=ended_at,
@@ -421,7 +415,7 @@ class MeetingExtractionMixin:
                 return
 
             if final_summary_short != summary_short or final_summary_long != summary_long:
-                await store.update_meeting_status(
+                await self.meeting_store.update_meeting_status(
                     active.meeting_id,
                     "processing",
                     ended_at=ended_at,
@@ -431,7 +425,7 @@ class MeetingExtractionMixin:
                     overwrite_summary=True,
                 )
 
-            await store.update_meeting_status(
+            await self.meeting_store.update_meeting_status(
                 active.meeting_id,
                 "processed",
                 ended_at=ended_at,
@@ -454,7 +448,7 @@ class MeetingExtractionMixin:
                     "Meeting capture finalization failed.",
                 )
             try:
-                await store.update_meeting_status(
+                await self.meeting_store.update_meeting_status(
                     active.meeting_id,
                     "failed",
                     ended_at=ended_at,

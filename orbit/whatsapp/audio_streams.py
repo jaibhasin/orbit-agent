@@ -152,12 +152,8 @@ class AudioStreamMixin:
                 active.capture_health_metadata,
                 metadata,
             )
-        store = getattr(self, "meeting_store", None)
-        update_status = getattr(store, "update_capture_session_status", None)
-        if not callable(update_status):
-            return None
         try:
-            return await update_status(active.capture_session_id, status, metadata=metadata)
+            return await self.meeting_store.update_capture_session_status(active.capture_session_id, status, metadata=metadata)
         except Exception as error:
             log(
                 f"Failed to update capture session {active.capture_session_id} to {status}: {error}",
@@ -177,12 +173,8 @@ class AudioStreamMixin:
                 active.capture_health_metadata,
                 metadata,
             )
-        store = getattr(self, "meeting_store", None)
-        mark_failed = getattr(store, "mark_capture_session_failed", None)
-        if not callable(mark_failed):
-            return None
         try:
-            return await mark_failed(
+            return await self.meeting_store.mark_capture_session_failed(
                 active.capture_session_id,
                 error_code,
                 error_message,
@@ -205,12 +197,8 @@ class AudioStreamMixin:
         )
         if not active.capture_session_id:
             return None
-        store = getattr(self, "meeting_store", None)
-        update_metadata = getattr(store, "update_capture_session_metadata", None)
-        if not callable(update_metadata):
-            return None
         try:
-            return await update_metadata(active.capture_session_id, patch)
+            return await self.meeting_store.update_capture_session_metadata(active.capture_session_id, patch)
         except Exception as error:
             log(
                 f"Failed to update capture session metadata {active.capture_session_id}: {error}",
@@ -224,12 +212,8 @@ class AudioStreamMixin:
             return None
         if active.capture_failure_recorded:
             return None
-        store = getattr(self, "meeting_store", None)
-        mark_finished = getattr(store, "mark_capture_session_finished", None)
-        if not callable(mark_finished):
-            return None
         try:
-            return await mark_finished(active.capture_session_id)
+            return await self.meeting_store.mark_capture_session_finished(active.capture_session_id)
         except Exception as error:
             log(
                 f"Failed to mark capture session {active.capture_session_id} as processed: {error}",
@@ -247,12 +231,8 @@ class AudioStreamMixin:
             and now - active.last_capture_heartbeat_at < CAPTURE_HEARTBEAT_INTERVAL_SECONDS
         ):
             return
-        store = getattr(self, "meeting_store", None)
-        heartbeat = getattr(store, "heartbeat_capture_session", None)
-        if not callable(heartbeat):
-            return
         try:
-            await heartbeat(active.capture_session_id)
+            await self.meeting_store.heartbeat_capture_session(active.capture_session_id)
             active.last_capture_heartbeat_at = now
         except Exception as error:
             log(
@@ -608,4 +588,3 @@ class AudioStreamMixin:
                     session_id,
                     level="error",
                 )
-
