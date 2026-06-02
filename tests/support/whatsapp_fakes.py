@@ -115,6 +115,7 @@ class FakeMeetingStore:
         self.memories = []
         self.source_chunks_for_id = {}
         self.meetings_lookup = {}
+        self.capture_sessions = []
         self.capture_session_updates = []
         self.capture_session_metadata_updates = []
         self.capture_session_metadata = {}
@@ -176,6 +177,24 @@ class FakeMeetingStore:
 
     async def update_meeting_status(self, meeting_id, status, **kwargs):
         self.updates.append({"meeting_id": meeting_id, "status": status, "fields": kwargs})
+
+    async def create_capture_session(
+        self,
+        meeting_id,
+        source_id,
+        capture_strategy="chrome_extension",
+        stt_provider="deepgram",
+    ):
+        capture_session = {
+            "id": f"capture-{len(self.capture_sessions) + 1}",
+            "meeting_id": meeting_id,
+            "source_id": source_id,
+            "capture_strategy": capture_strategy,
+            "stt_provider": stt_provider,
+            "status": "scheduled",
+        }
+        self.capture_sessions.append(capture_session)
+        return capture_session
 
     async def update_capture_session_status(self, capture_session_id, status, metadata=None):
         self.capture_session_updates.append(
@@ -756,10 +775,9 @@ def build_service(memory=None, meeting_store=None):
     service.openai_client = FakeOpenAIClient()
     service.max_parallel_meetings = 3
     service.active_sessions = {}
+    service.pending_meeting_starts = set()
     service.lock = asyncio.Lock()
     service.memory = memory or FakeMemory()
     service.meeting_store = meeting_store or FakeMeetingStore()
     service.live_stt = FakeLiveSTT()
     return service
-
-

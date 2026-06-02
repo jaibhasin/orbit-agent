@@ -15,7 +15,7 @@ Steps:
 2. Join with microphone and camera disabled. The page may ask "Do you want people to see and hear you in the meeting?" and show an "Allow microphone and camera" button. Ignore that entire prompt. Never click "Allow microphone and camera", never use the page info icon, and never enable browser site permissions.
 3. If a modal says "Meet is blocked from using your microphone and camera", click its "Close dialog" button (the X) immediately. This is expected when joining silently and is not a reason to stop. Do not interact with elements behind the modal until it is closed.
 4. If and only if a visible button says "Continue without microphone and camera", click that button.
-5. If a visible guest name field exists, fill it with "{display_name}" and continue immediately.
+5. If a visible guest name field exists, fill it with "{display_name}" and continue immediately. Never combine filling the name with a click in the same browser action.
 6. Click the best available visible join button by its text as soon as the name is populated, preferring "Ask to join", then "Join now", then "Request to join", then "Join".
 7. If microphone or camera toggles are on in the pre-join screen, turn them off.
 8. Do not click Terms of Service, Privacy Policy, or any footer link.

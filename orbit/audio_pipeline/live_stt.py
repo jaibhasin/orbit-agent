@@ -158,6 +158,11 @@ class LiveSTTSession:
             return
 
         log(
+            f"Normalized transcript segment(s): {_format_segments_for_log(normalized_segments, 'clean_text')}",
+            self.state.session_id,
+            level="debug",
+        )
+        log(
             f"evt=stt.transcript_stored count={len(normalized_segments)}",
             self.state.session_id,
             level="important",
