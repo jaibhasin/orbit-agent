@@ -8,6 +8,7 @@ let visualVideo = null;
 let previousVisualThumbnail = null;
 let lastSentVisualThumbnail = null;
 let lastVisualSentAt = 0;
+let captureStartedAt = 0;
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || message.type !== "ORBIT_OFFSCREEN_START") return false;
@@ -28,6 +29,7 @@ async function startCapture(config) {
     const audioFormat = config.audioFormat || {};
     const visualConfig = config.visualCapture || {};
     const visualEnabled = Boolean(visualConfig.enabled);
+    captureStartedAt = performance.now();
     const sampleRate = Number(audioFormat.sampleRate || 16000);
     const channels = Number(audioFormat.channels || 1);
 
@@ -112,7 +114,7 @@ function sampleVisualFrame(config) {
     socket.readyState !== WebSocket.OPEN
   ) return;
 
-  const crop = insetCrop(visualVideo.videoWidth, visualVideo.videoHeight, 0.04);
+  const crop = insetCrop(visualVideo.videoWidth, visualVideo.videoHeight, 0.08);
   const thumbnail = createThumbnail(visualVideo, crop);
   const nowMs = performance.now();
   const options = {
@@ -155,7 +157,7 @@ function sampleVisualFrame(config) {
     : 1;
   socket.send(JSON.stringify({
     type: "visual_frame",
-    timestamp_ms: Math.round(performance.timeOrigin + nowMs),
+    timestamp_ms: Math.max(0, Math.round(nowMs - captureStartedAt)),
     image_data_url: canvas.toDataURL("image/jpeg", Number(config.jpegQuality || 0.65)),
     width,
     height,
@@ -206,6 +208,7 @@ async function stopCapture() {
   previousVisualThumbnail = null;
   lastSentVisualThumbnail = null;
   lastVisualSentAt = 0;
+  captureStartedAt = 0;
   if (source) {
     source.disconnect();
     source = null;
