@@ -46,6 +46,7 @@ python -m unittest discover -s tests
 python -m compileall -q orbit scripts
 node --check extension/orbit-audio-capture/content.js
 node --check extension/orbit-audio-capture/service_worker.js
+node --check extension/orbit-audio-capture/frame_change.js
 node --check extension/orbit-audio-capture/offscreen.js
 node tests/orbit_audio_capture_extension.test.js
 python -m json.tool extension/orbit-audio-capture/manifest.json >/dev/null
