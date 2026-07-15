@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -32,7 +33,7 @@ class VisualFrameMixin:
             self._visual_health(active)["frames_dropped_busy"] += 1
             return False
 
-        task = __import__("asyncio").create_task(self._analyze_and_store_visual_frame(active, payload))
+        task = asyncio.create_task(self._analyze_and_store_visual_frame(active, payload))
         tasks.add(task)
         task.add_done_callback(tasks.discard)
         return True
