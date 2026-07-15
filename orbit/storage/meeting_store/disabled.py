@@ -100,6 +100,12 @@ class DisabledMeetingStore:
     async def getSourceChunksBySourceId(self, source_id: str):
         return await self.get_source_chunks_by_source_id(source_id)
 
+    async def create_visual_frame(self, **kwargs) -> str | None:
+        return None
+
+    async def get_visual_frames_by_meeting_id(self, meeting_id: str):
+        return []
+
     async def create_extraction_run(
         self,
         *,

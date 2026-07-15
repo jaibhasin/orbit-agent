@@ -100,6 +100,7 @@ jobs:
         run: |
           node --check extension/orbit-audio-capture/content.js
           node --check extension/orbit-audio-capture/service_worker.js
+          node --check extension/orbit-audio-capture/frame_change.js
           node --check extension/orbit-audio-capture/offscreen.js
 
       - name: Run Chrome extension tests

@@ -56,7 +56,8 @@ window.addEventListener("message", (event) => {
       encoding: "linear16",
       sampleRate: 16000,
       channels: 1
-    }
+    },
+    visualCapture: message.visualCapture || { enabled: false }
   }, () => {
     injectStartButton();
   });
@@ -74,7 +75,7 @@ function injectStartButton() {
   const button = document.createElement("button");
   button.id = "orbit-audio-capture-button";
   button.type = "button";
-  button.textContent = "Start Orbit audio";
+  button.textContent = "Start Orbit capture";
   button.style.cssText = [
     "position:fixed",
     "z-index:2147483647",
@@ -91,7 +92,7 @@ function injectStartButton() {
   ].join(";");
 
   button.addEventListener("click", () => {
-    button.textContent = "Starting Orbit audio...";
+    button.textContent = "Starting Orbit capture...";
     chrome.runtime.sendMessage({ type: "ORBIT_USER_START_CAPTURE" }, (response) => {
       updateCaptureButton(response, chrome.runtime.lastError?.message);
     });
@@ -105,7 +106,7 @@ function updateCaptureButton(response, runtimeError) {
   if (!button) return;
 
   if (response && response.ok) {
-    button.textContent = "Orbit audio active";
+    button.textContent = "Orbit capture active";
     button.disabled = true;
     button.style.opacity = "0.72";
     return;
@@ -113,7 +114,7 @@ function updateCaptureButton(response, runtimeError) {
 
   button.textContent = "Use Alt+Shift+O or the extension icon";
   console.warn(
-    "Orbit audio capture did not start. Use the extension shortcut or icon:",
+    "Orbit capture did not start. Use the extension shortcut or icon:",
     runtimeError || (response && response.error)
   );
 }

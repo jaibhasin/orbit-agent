@@ -152,7 +152,7 @@ function testContentScriptDisplaysActiveStatus() {
 
   runtimeListeners[0]({ type: "ORBIT_CAPTURE_STATUS", ok: true });
 
-  assert.equal(button.textContent, "Orbit audio active");
+  assert.equal(button.textContent, "Orbit capture active");
   assert.equal(button.disabled, true);
   assert.equal(button.style.opacity, "0.72");
 }
@@ -227,11 +227,62 @@ function testContentScriptSuppressesMeetMediaPermissionControl() {
   assert.equal(event.immediatePropagationStopped, true);
 }
 
+function testFrameChangeDetectorRequiresStableMeaningfulChange() {
+  const context = {};
+  vm.runInNewContext(
+    fs.readFileSync(path.join(extensionDir, "frame_change.js"), "utf8"),
+    context
+  );
+
+  const detector = context.OrbitFrameChange;
+  const dark = new Uint8Array([0, 0, 0, 0]);
+  const bright = new Uint8Array([255, 255, 255, 255]);
+  const almostBright = new Uint8Array([254, 255, 254, 255]);
+
+  assert.equal(
+    detector.shouldSendFrame({
+      current: bright,
+      previousSample: dark,
+      lastSent: dark,
+      nowMs: 10000,
+      lastSentAt: 0,
+      cooldownMs: 8000
+    }),
+    false,
+    "a changing transition must not be sent"
+  );
+  assert.equal(
+    detector.shouldSendFrame({
+      current: bright,
+      previousSample: almostBright,
+      lastSent: dark,
+      nowMs: 10000,
+      lastSentAt: 0,
+      cooldownMs: 8000
+    }),
+    true,
+    "a stable frame that differs from the last sent frame should be sent"
+  );
+  assert.equal(
+    detector.shouldSendFrame({
+      current: bright,
+      previousSample: bright,
+      lastSent: dark,
+      nowMs: 12000,
+      lastSentAt: 10000,
+      cooldownMs: 8000
+    }),
+    false,
+    "the VLM cooldown must suppress otherwise eligible frames"
+  );
+}
+
 async function main() {
   await testToolbarActivationReportsStatus();
   testContentScriptDisplaysActiveStatus();
   testContentScriptSuppressesMeetMediaPermissionControl();
-  console.log("Orbit audio capture extension tests passed.");
+  testFrameChangeDetectorRequiresStableMeaningfulChange();
+  console.log("Orbit meeting capture extension tests passed.");
 }
 
 main().catch((error) => {

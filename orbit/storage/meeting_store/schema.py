@@ -115,6 +115,25 @@ CREATE TABLE IF NOT EXISTS source_chunks (
 CREATE INDEX IF NOT EXISTS idx_source_chunks_source_id
     ON source_chunks(source_id, chunk_index);
 
+CREATE TABLE IF NOT EXISTS visual_frames (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    meeting_id UUID NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    source_id UUID REFERENCES sources(id) ON DELETE SET NULL,
+    captured_at_ms INTEGER NOT NULL,
+    content_hash TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    width INTEGER,
+    height INTEGER,
+    change_score NUMERIC,
+    summary TEXT NOT NULL,
+    analysis_json JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (meeting_id, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_visual_frames_meeting_time
+    ON visual_frames (meeting_id, captured_at_ms);
+
 CREATE TABLE IF NOT EXISTS extraction_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source_id UUID REFERENCES sources(id) ON DELETE CASCADE,

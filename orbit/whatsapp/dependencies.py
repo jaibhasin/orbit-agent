@@ -91,7 +91,7 @@ AUDIO_SINK_CREATE_ERROR_CODE = "AUDIO_SINK_CREATE_FAILED"
 FFMPEG_STREAM_EXITED_WITHOUT_CHUNKS = "No audio reached Orbit from the server audio sink."
 MEETING_EXTRACTION_PROMPT_VERSION = "meeting-extractor-v1"
 MEETING_EXTRACTION_RUN_TYPE = "full_meeting_extraction"
-MEETING_EXTRACT_PROMPT = """You are extracting structured company memory from a meeting transcript.
+MEETING_EXTRACT_PROMPT = """You are extracting structured company memory from timestamped meeting evidence.
 
 Return only valid JSON. Do not include markdown.
 
@@ -113,7 +113,7 @@ Rules:
 - Use confidence from 0 to 1.
 - Keep output concise.
 
-Transcript:
+Meeting evidence:
 {transcript}
 """
 ANSWER_MODE_LABELS = {

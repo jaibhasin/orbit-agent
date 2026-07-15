@@ -92,7 +92,8 @@ async function startCaptureForTab(tab) {
             encoding: "linear16",
             sampleRate: 16000,
             channels: 1
-          }
+          },
+          visualCapture: config.visualCapture || { enabled: false }
         });
         resolve(response || { ok: true });
       } catch (error) {

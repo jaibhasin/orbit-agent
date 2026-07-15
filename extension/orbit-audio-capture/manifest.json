@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Orbit Meet Audio Capture",
-  "version": "0.1.0",
+  "name": "Orbit Meet Capture",
+  "version": "0.2.0",
   "minimum_chrome_version": "116",
-  "description": "Captures Google Meet tab audio for Orbit live transcription.",
+  "description": "Captures Google Meet tab audio and meaningful changed visual frames for Orbit.",
   "permissions": [
     "activeTab",
     "offscreen",
@@ -20,14 +20,14 @@
     "service_worker": "service_worker.js"
   },
   "action": {
-    "default_title": "Start Orbit audio capture"
+    "default_title": "Start Orbit meeting capture"
   },
   "commands": {
     "start-capture": {
       "suggested_key": {
         "default": "Alt+Shift+O"
       },
-      "description": "Start Orbit tab audio capture"
+      "description": "Start Orbit meeting capture"
     }
   },
   "content_scripts": [

@@ -564,6 +564,79 @@ class PostgresMeetingStore:
     async def getSourceChunksBySourceId(self, source_id: str):
         return await self.get_source_chunks_by_source_id(source_id)
 
+    async def create_visual_frame(
+        self,
+        *,
+        meeting_id: str,
+        source_id: str | None,
+        captured_at_ms: int,
+        content_hash: str,
+        mime_type: str,
+        width: int | None,
+        height: int | None,
+        change_score: float | None,
+        summary: str,
+        analysis_json: dict,
+    ) -> str | None:
+        if not meeting_id or not content_hash or not summary:
+            return None
+
+        await self._ensure_ready()
+        async with await self._connect() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT INTO visual_frames (
+                        meeting_id,
+                        source_id,
+                        captured_at_ms,
+                        content_hash,
+                        mime_type,
+                        width,
+                        height,
+                        change_score,
+                        summary,
+                        analysis_json
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    ON CONFLICT (meeting_id, content_hash) DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        meeting_id,
+                        source_id,
+                        max(0, int(captured_at_ms)),
+                        content_hash,
+                        mime_type,
+                        width,
+                        height,
+                        change_score,
+                        summary,
+                        json.dumps(analysis_json),
+                    ),
+                )
+                row = await cursor.fetchone()
+                await conn.commit()
+                return row["id"] if row else None
+
+    async def get_visual_frames_by_meeting_id(self, meeting_id: str):
+        if not meeting_id:
+            return []
+        await self._ensure_ready()
+        async with await self._connect() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    SELECT captured_at_ms, content_hash, mime_type, width, height,
+                           change_score, summary, analysis_json, created_at
+                    FROM visual_frames
+                    WHERE meeting_id = %s
+                    ORDER BY captured_at_ms ASC
+                    """,
+                    (meeting_id,),
+                )
+                return (await cursor.fetchall()) or []
+
     async def create_extraction_run(
         self,
         *,

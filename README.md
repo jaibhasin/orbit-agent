@@ -69,6 +69,7 @@ The frontend in [`frontend/openui-orbit-demo`](frontend/openui-orbit-demo) is th
 | Google Meet agent | Implemented | Joins authorized Meets with mic and camera disabled, opens chat, posts an intro, and monitors the session |
 | Meet chat capture | Implemented | Captures visible chat messages and detects `@orbit` mentions |
 | Live transcript capture | Implemented | Captures Meet tab audio through a local Manifest V3 Chrome extension and streams PCM16 audio to Deepgram |
+| Shared-screen visual capture | Implemented, opt-in | Samples tab video locally, waits for a stable meaningful change, and sends only changed frames to a low-detail VLM |
 | Speaker enrichment | Best effort | Uses visible Google Meet captions as an optional speaker-attribution layer |
 | Structured meeting memory | Implemented | Persists sources, meetings, capture sessions, transcript chunks, extraction runs, decisions, action items, and durable memories |
 | Searchable memory | Implemented | Stores chat and transcript memory chunks with OpenAI embeddings for source-backed recall |
@@ -104,13 +105,11 @@ agent tool wrappers
       |       +--> Browser Use fallback
       |       +--> Meet chat capture
       |       +--> optional caption attribution
-      |       +--> Chrome extension tab audio
+      |       +--> Chrome extension tab audio + optional visuals
       |                 |
-      |                 v
-      |           Orbit audio WebSocket
+      |                 +--> PCM16 -> Deepgram live STT
       |                 |
-      |                 v
-      |           Deepgram live STT
+      |                 +--> stable changed frame -> low-detail VLM
       |
       +--> meeting intelligence reads
       |
@@ -176,6 +175,8 @@ DEEPGRAM_LIVE_MODEL=nova-3
 ORBIT_LIVE_STT_ENABLED=true
 ORBIT_AUDIO_WS_BASE_URL=ws://127.0.0.1:8000
 ORBIT_CHROME_EXTENSION_PATH=extension/orbit-audio-capture
+ORBIT_VISUAL_CAPTURE_ENABLED=false
+ORBIT_VISUAL_MODEL=gpt-5.4-mini
 
 TWILIO_ACCOUNT_SID=...
 TWILIO_AUTH_TOKEN=...
@@ -198,7 +199,7 @@ For local development with `GMEET_USE_SYSTEM_CHROME=true` or an existing CDP bro
 3. Click **Load unpacked**.
 4. Select [`extension/orbit-audio-capture`](extension/orbit-audio-capture).
 
-The extension captures Meet tab audio locally and sends it to Orbit's local WebSocket. The Deepgram API key stays in the backend.
+The extension captures Meet tab audio locally and sends it to Orbit's local WebSocket. When visual capture is enabled, it also samples the tab locally, rejects moving or duplicate frames, and sends only stable meaningful changes to the backend VLM. Provider keys stay in the backend.
 
 ### Run The WhatsApp Agent
 
@@ -293,7 +294,7 @@ orbit/storage/memory_index/   Chat/transcript embeddings and source-backed recal
 orbit/whatsapp/               Runtime, meeting lifecycle, audio streams, extraction, recall
 orbit/agent/                  Typed tools and deterministic WhatsApp command parser
 orbit/api/                    FastAPI app, Twilio webhook, intelligence route, audio WebSocket
-extension/orbit-audio-capture/ Local Manifest V3 Meet tab-audio capture extension
+extension/orbit-audio-capture/ Local Manifest V3 Meet audio and changed-frame capture extension
 frontend/openui-orbit-demo/   Static OpenUI command-center design probe
 scripts/                      Local run, migration, audit, reindex, and extraction helpers
 tests/                        Python and Chrome-extension tests
@@ -350,6 +351,12 @@ python scripts/test_meeting_extraction.py --meeting-id <MEETING_ID>
 | `ORBIT_AUDIO_WS_BASE_URL` | Local extension-audio WebSocket base URL |
 | `ORBIT_CHROME_EXTENSION_PATH` | Unpacked extension path |
 | `ORBIT_CHROME_CDP_URL` | Optional existing Chrome CDP URL |
+| `ORBIT_VISUAL_CAPTURE_ENABLED` | Opt in to local visual sampling and changed-frame analysis |
+| `ORBIT_VISUAL_MODEL` | Vision-capable model used only for accepted changed frames |
+| `ORBIT_VISUAL_SAMPLE_INTERVAL_MS` | Local frame sampling interval, default 3000 ms |
+| `ORBIT_VISUAL_COOLDOWN_MS` | Minimum interval between VLM frames, default 8000 ms |
+| `ORBIT_VISUAL_CHANGE_THRESHOLD` | Minimum perceptual change from the last accepted frame |
+| `ORBIT_VISUAL_STABILITY_THRESHOLD` | Maximum movement allowed before a changed frame is considered stable |
 | `DATABASE_URL` | Required by the WhatsApp backend for persistence and memory |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token and inbound-signature validation secret |

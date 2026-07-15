@@ -114,6 +114,8 @@ class FakeMeetingStore:
         self.action_items = []
         self.memories = []
         self.source_chunks_for_id = {}
+        self.visual_frames_for_meeting = {}
+        self.visual_frames = []
         self.meetings_lookup = {}
         self.capture_sessions = []
         self.capture_session_updates = []
@@ -265,6 +267,13 @@ class FakeMeetingStore:
 
     async def getSourceChunksBySourceId(self, source_id):
         return await self.get_source_chunks_by_source_id(source_id)
+
+    async def create_visual_frame(self, **kwargs):
+        self.visual_frames.append(kwargs)
+        return f"visual-{len(self.visual_frames)}"
+
+    async def get_visual_frames_by_meeting_id(self, meeting_id):
+        return list(self.visual_frames_for_meeting.get(meeting_id, []))
 
     async def create_extraction_run(
         self,
