@@ -277,6 +277,42 @@ class WhatsAppExtractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.updates[-1]["status"], "processed")
         self.assertEqual(store.extraction_runs[0]["output_json"]["summary_short"], "Launch update")
 
+    async def test_run_meeting_extraction_includes_timestamped_visual_evidence(self):
+        store = FakeMeetingStore()
+        store.source_chunks_for_id = {
+            "source-1": [
+                {
+                    "chunk_index": 0,
+                    "speaker_label": "Aman",
+                    "start_ms": 60000,
+                    "text": "This is the launch plan.",
+                }
+            ]
+        }
+        store.visual_frames_for_meeting = {
+            "meeting-1": [
+                {
+                    "captured_at_ms": 65000,
+                    "summary": "Roadmap slide shows beta in August and launch in October.",
+                }
+            ]
+        }
+        service = build_service(memory=FakeMemory(), meeting_store=store)
+        service.openai_client = FakeOpenAIClient(
+            responses=[
+                '{"summary_short":"Roadmap","summary_long":"Launch roadmap.","decisions":[],"action_items":[],"risks":[],"open_questions":[],"durable_memories":[]}'
+            ]
+        )
+
+        result = await service.runMeetingExtraction(
+            {"meetingId": "meeting-1", "sourceId": "source-1"}
+        )
+
+        self.assertEqual(result["status"], "success")
+        prompt = service.openai_client.chat.completions.calls[0]["messages"][1]["content"]
+        self.assertIn("[Transcript 01:00] Aman: This is the launch plan.", prompt)
+        self.assertIn("[Visual 01:05] Roadmap slide shows beta in August", prompt)
+
     async def test_run_meeting_extraction_failed_on_non_json_output(self):
         store = FakeMeetingStore()
         store.source_chunks_for_id = {
