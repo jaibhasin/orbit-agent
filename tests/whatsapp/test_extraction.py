@@ -310,8 +310,8 @@ class WhatsAppExtractionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["status"], "success")
         prompt = service.openai_client.chat.completions.calls[0]["messages"][1]["content"]
-        self.assertIn("[Transcript 01:00] Aman: This is the launch plan.", prompt)
-        self.assertIn("[Visual 01:05] Roadmap slide shows beta in August", prompt)
+        self.assertIn("[Transcript 00:01:00] Aman: This is the launch plan.", prompt)
+        self.assertIn("[Visual 00:01:05] Roadmap slide shows beta in August", prompt)
 
     async def test_run_meeting_extraction_failed_on_non_json_output(self):
         store = FakeMeetingStore()
