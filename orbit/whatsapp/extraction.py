@@ -77,8 +77,14 @@ class MeetingExtractionMixin:
                 level="important",
             )
 
+            get_visual_frames = getattr(store, "get_visual_frames_by_meeting_id", None)
+            visual_frames = await get_visual_frames(meeting_id) if callable(get_visual_frames) else []
             transcript = self._build_transcript_text(chunks)
-            if not transcript:
+            visual_evidence = self._build_visual_evidence_text(visual_frames)
+            meeting_evidence = "\n".join(
+                section for section in (transcript, visual_evidence) if section
+            )
+            if not meeting_evidence:
                 output_json = self._empty_extraction_output()
                 decisions = output_json.get("decisions")
                 action_items = output_json.get("action_items")
@@ -145,7 +151,7 @@ class MeetingExtractionMixin:
                     "memories_inserted": memories_inserted,
                 }
 
-            extraction_prompt = MEETING_EXTRACT_PROMPT.format(transcript=transcript)
+            extraction_prompt = MEETING_EXTRACT_PROMPT.format(transcript=meeting_evidence)
             log(
                 f"evt=extraction.prompt_prepared meeting_id={meeting_id} source_id={source_id} prompt_length={len(extraction_prompt)}",
                 meeting_id,
@@ -156,7 +162,7 @@ class MeetingExtractionMixin:
                 messages=[
                     {
                         "role": "system",
-                        "content": MEETING_EXTRACT_PROMPT.split("Transcript:")[0].strip(),
+                        "content": MEETING_EXTRACT_PROMPT.split("Meeting evidence:")[0].strip(),
                     },
                     {"role": "user", "content": extraction_prompt},
                 ],
@@ -286,7 +292,22 @@ class MeetingExtractionMixin:
             if not text:
                 continue
             speaker = (chunk.get("speaker_label") or "Unknown") or "Unknown"
-            lines.append(f"{speaker}: {text}")
+            timestamp = format_timestamp_ms(chunk.get("start_ms"))
+            prefix = f"[Transcript {timestamp}] " if timestamp else "[Transcript] "
+            lines.append(f"{prefix}{speaker}: {text}")
+        return "\n".join(lines)
+
+    def _build_visual_evidence_text(self, frames):
+        lines = []
+        for frame in frames or []:
+            if not isinstance(frame, dict):
+                continue
+            summary = str(frame.get("summary") or "").strip()
+            if not summary:
+                continue
+            timestamp = format_timestamp_ms(frame.get("captured_at_ms"))
+            label = f"Visual {timestamp}" if timestamp else "Visual"
+            lines.append(f"[{label}] {summary}")
         return "\n".join(lines)
 
     def _parse_extraction_json(self, raw_output: str):
