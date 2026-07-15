@@ -37,7 +37,7 @@ async def trigger_extension_audio_capture(page, state, audio_stream_ws_url):
         if not status:
             return None
         label = str(status.get("label") or "").strip().lower()
-        if status.get("disabled") or "audio active" in label or "orbit audio capture active" in label:
+        if status.get("disabled") or "capture active" in label or "orbit audio capture active" in label:
             return "active"
         if "starting orbit audio" in label:
             return "starting"
@@ -64,6 +64,15 @@ async def trigger_extension_audio_capture(page, state, audio_stream_ws_url):
             "encoding": "linear16",
             "sampleRate": 16000,
             "channels": 1,
+        },
+        "visualCapture": {
+            "enabled": env_bool("ORBIT_VISUAL_CAPTURE_ENABLED", False),
+            "sampleIntervalMs": env_int("ORBIT_VISUAL_SAMPLE_INTERVAL_MS", 3000),
+            "cooldownMs": env_int("ORBIT_VISUAL_COOLDOWN_MS", 8000),
+            "changeThreshold": float(os.environ.get("ORBIT_VISUAL_CHANGE_THRESHOLD", "0.08")),
+            "stabilityThreshold": float(os.environ.get("ORBIT_VISUAL_STABILITY_THRESHOLD", "0.02")),
+            "maxWidth": env_int("ORBIT_VISUAL_MAX_WIDTH", 1280),
+            "jpegQuality": float(os.environ.get("ORBIT_VISUAL_JPEG_QUALITY", "0.65")),
         },
     }
 
@@ -133,7 +142,7 @@ async def trigger_extension_audio_capture(page, state, audio_stream_ws_url):
             return True
         if activation_state == "starting":
             state.live_stt_status_detail = (
-                "Orbit audio capture button is starting capture. Treating as accepted."
+                "Orbit capture button is starting capture. Treating as accepted."
             )
             log("evt=stt.extension_starting", state.session_id, level="important")
             return True
