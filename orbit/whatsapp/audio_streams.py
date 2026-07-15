@@ -545,6 +545,8 @@ class AudioStreamMixin:
                         "Extension audio WebSocket connected. Waiting for the first audio chunk."
                     )
                     await websocket.send_json({"type": "ready"})
+                elif message_type == "visual_frame":
+                    await self.schedule_visual_frame_analysis(active, payload)
                 elif message_type == "stop":
                     self._finish_audio_silence_gate(active)
                     break
