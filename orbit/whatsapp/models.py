@@ -25,6 +25,7 @@ class ActiveMeeting:
     last_capture_metadata_flush_at: float = 0.0
     audio_silence_gate: PCM16SilenceGate | None = None
     last_deepgram_keepalive_at: float = 0.0
+    visual_analysis_tasks: set[asyncio.Task] = field(default_factory=set)
 
 
 @dataclass
