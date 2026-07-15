@@ -6,6 +6,7 @@ from .live_recall import LiveRecallMixin
 from .meeting_sessions import MeetingSessionMixin
 from .message_flow import WhatsAppMessageFlowMixin
 from .responses import WhatsAppResponseMixin
+from .visual_frames import VisualFrameMixin
 from .runtime import RuntimeMixin
 
 
@@ -14,6 +15,7 @@ class OrbitWhatsAppService(
     WhatsAppMessageFlowMixin,
     MeetingSessionMixin,
     AudioStreamMixin,
+    VisualFrameMixin,
     LiveRecallMixin,
     MeetingExtractionMixin,
     WhatsAppResponseMixin,
