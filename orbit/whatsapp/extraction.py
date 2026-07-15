@@ -447,6 +447,7 @@ class MeetingExtractionMixin:
 
     async def handle_session_finished(self, state):
         active = self.active_sessions.get(state.session_id)
+        await self.finish_visual_frame_analysis(active)
         try:
             await self.live_stt.stop(state.session_id)
         except Exception as error:

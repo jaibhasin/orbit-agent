@@ -26,6 +26,7 @@ class ActiveMeeting:
     audio_silence_gate: PCM16SilenceGate | None = None
     last_deepgram_keepalive_at: float = 0.0
     visual_analysis_tasks: set[asyncio.Task] = field(default_factory=set)
+    accepting_visual_frames: bool = True
 
 
 @dataclass

@@ -5,7 +5,7 @@ import base64
 import hashlib
 import json
 import os
-from typing import Any
+from typing import Any, Protocol, cast
 
 from orbit.core import env_int, log, now_iso
 
@@ -23,9 +23,21 @@ DEFAULT_MAX_FRAME_BYTES = 900_000
 DEFAULT_MAX_IN_FLIGHT = 2
 
 
+class VisualFrameService(Protocol):
+    meeting_store: Any
+    openai_client: Any
+    model_name: str
+
+    async def _update_capture_session_metadata(
+        self,
+        active: Any,
+        updates: dict[str, Any],
+    ) -> None: ...
+
+
 class VisualFrameMixin:
     async def schedule_visual_frame_analysis(self, active, payload: dict[str, Any]) -> bool:
-        if not active or not active.meeting_id:
+        if not active or not active.meeting_id or not active.accepting_visual_frames:
             return False
         tasks = active.visual_analysis_tasks
         tasks.difference_update(task for task in tasks if task.done())
@@ -38,7 +50,16 @@ class VisualFrameMixin:
         task.add_done_callback(tasks.discard)
         return True
 
+    async def finish_visual_frame_analysis(self, active) -> None:
+        if not active:
+            return
+        active.accepting_visual_frames = False
+        tasks = tuple(active.visual_analysis_tasks)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     async def _analyze_and_store_visual_frame(self, active, payload: dict[str, Any]) -> None:
+        service = cast(VisualFrameService, self)
         health = self._visual_health(active)
         health["frames_received"] += 1
         try:
@@ -53,7 +74,7 @@ class VisualFrameMixin:
             if not summary:
                 summary = self._fallback_visual_summary(analysis)
 
-            await self.meeting_store.create_visual_frame(
+            await service.meeting_store.create_visual_frame(
                 meeting_id=active.meeting_id,
                 source_id=active.source_id,
                 captured_at_ms=timestamp_ms,
@@ -68,7 +89,7 @@ class VisualFrameMixin:
             health["frames_analyzed"] += 1
             health["last_frame_at"] = now_iso()
             health["last_error"] = None
-            await self._update_capture_session_metadata(active, {"visual": dict(health)})
+            await service._update_capture_session_metadata(active, {"visual": dict(health)})
         except Exception as error:
             health["frames_failed"] += 1
             health["last_error"] = str(error)[:300]
@@ -77,11 +98,12 @@ class VisualFrameMixin:
                 active.session_id,
                 level="error",
             )
-            await self._update_capture_session_metadata(active, {"visual": dict(health)})
+            await service._update_capture_session_metadata(active, {"visual": dict(health)})
 
     async def _call_visual_model(self, image_data_url: str) -> dict[str, Any]:
-        response = await self.openai_client.chat.completions.create(
-            model=os.environ.get("ORBIT_VISUAL_MODEL") or self.model_name,
+        service = cast(VisualFrameService, self)
+        response = await service.openai_client.chat.completions.create(
+            model=os.environ.get("ORBIT_VISUAL_MODEL") or service.model_name,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": VISUAL_ANALYSIS_SYSTEM_PROMPT},
